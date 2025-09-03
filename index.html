@@ -35,14 +35,6 @@
         <h1 class="text-3xl font-bold text-center text-gray-800 mb-2 md:text-4xl">PMB Bitumen Mix Chart</h1>
         <p class="text-center text-gray-500 mb-8 max-w-md mx-auto">Enter the percentages of each component to see how the mix's qualities change in real time.</p>
 
-        <!-- Status and User ID display -->
-        <div class="mb-4 text-center">
-            <p id="userIdDisplay" class="text-sm font-medium text-gray-500 break-all"></p>
-            <div id="statusMessage" class="mt-2 p-2 rounded-lg text-sm text-gray-800 bg-gray-200">
-                Authenticating...
-            </div>
-        </div>
-
         <!-- Input Fields Section -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-4">
             <!-- Component 1: C170 Bitumen -->
@@ -96,13 +88,7 @@
         </div>
     </div>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        setLogLevel('Debug');
-
+    <script type="text/javascript">
         // Mapping of components to their qualities. Values are relative weights.
         const components = {
             c170Bitumen: {
@@ -130,20 +116,9 @@
                     Viscosity: 0.9
                 },
                 defaultValue: 15,
-                // The following data is included for reference and potential future display
-                data: {
-                    Structure: 'Radial',
-                    StyreneContent: '31.0%',
-                    Density: '0.94 g/㎤',
-                    TSV: '28.2 cSt',
-                    Hardness: '84 Shore A',
-                    VolatileMatter: '< 0.6%',
-                    YellowIndex: 'ASTM D1925'
-                }
             },
             ha32CombiningOil: {
                 name: 'Ha32 Combining Oil',
-                // Low viscosity and liquid form increase flexibility and workability.
                 qualities: {
                     Adhesion: 0.8,
                     Durability: 0.3,
@@ -154,29 +129,9 @@
                     Viscosity: 0.2
                 },
                 defaultValue: 10,
-                // The following data is included for reference and potential future display
-                data: {
-                    Form: 'Liquid',
-                    Colour: 'N Av',
-                    Odour: 'Negligible',
-                    Solubility: 'Insoluble in water',
-                    Density: '0.86 kg/L @ 15 °C',
-                    RelativeVapourDensity: '>1',
-                    VapourPressure: '<0.1 mmHg @ 20 °C',
-                    FlashPoint: '>200 °C',
-                    FlammabilityLimits: 'N App',
-                    AutoignitionTemperature: 'N Av',
-                    MeltingPoint: 'N Av',
-                    BoilingPoint: '>350 °C',
-                    pH: 'N App',
-                    Viscosity_40C: '28-35 cSt @ 40 °C',
-                    Viscosity_100C: '4.9-5.9 cSt @ 100 °C',
-                    TotalVOC: 'N Av'
-                }
             },
             bitlinker: {
                 name: 'Ravasol™ BITLINKER-S6F',
-                // Qualities reflecting its role as a granular stabilizer with high temperature stability.
                 qualities: {
                     Adhesion: 0.6,
                     Durability: 0.8,
@@ -187,49 +142,12 @@
                     Viscosity: 0.8
                 },
                 defaultValue: 5,
-                // The following data is included for reference and potential future display
-                data: {
-                    Appearance: 'Granular',
-                    Colour: 'Blue',
-                    Odour: 'Odourless',
-                    MeltingPoint: '80-120 °C',
-                    FlashPoint: '>230 °C',
-                    RelativeDensity: '0.63 g/cm³',
-                    Solubility: 'N.A./N.A.'
-                }
             }
         };
 
-        // Global variables for Firebase services and user ID
-        let db;
-        let auth;
-        let userId;
-
         const inputIds = ['c170Bitumen', 'sbs', 'ha32CombiningOil', 'bitlinker'];
         let myChart;
-        const statusMessageDiv = document.getElementById('statusMessage');
-        const userIdDisplay = document.getElementById('userIdDisplay');
 
-        // Simple debounce function to limit database writes
-        function debounce(func, delay) {
-            let timeout;
-            return function(...args) {
-                clearTimeout(timeout);
-                timeout = setTimeout(() => func.apply(this, args), delay);
-            };
-        }
-
-        // Function to show status messages
-        function showStatus(message, isError = false) {
-            statusMessageDiv.textContent = message;
-            if (isError) {
-                statusMessageDiv.className = 'mt-2 p-2 rounded-lg text-sm bg-red-200 text-red-800';
-            } else {
-                statusMessageDiv.className = 'mt-2 p-2 rounded-lg text-sm bg-gray-200 text-gray-800';
-            }
-        }
-
-        // Function to calculate the total qualities based on current percentages
         function calculateQualities() {
             const finalQualities = {};
             const qualityKeys = Object.keys(Object.values(components)[0].qualities);
@@ -241,7 +159,6 @@
                 totalPercentage += percentage;
             }
 
-            // Calculate weighted sum of qualities
             for (const inputId of inputIds) {
                 const percentage = parseFloat(document.getElementById(inputId).value) || 0;
                 const component = components[inputId];
@@ -250,44 +167,12 @@
                 }
             }
 
-            // Normalize values to a 0-100 scale for the chart
             const finalValues = {};
             for (const quality in finalQualities) {
                 const adjustmentFactor = totalPercentage > 0 ? 100 / totalPercentage : 1;
                 finalValues[quality] = Math.round(finalQualities[quality] * adjustmentFactor * 100);
             }
             return finalValues;
-        }
-
-        const updateValuesAndSave = debounce(() => {
-            updateInputs();
-            
-            // Check if userId is available before saving
-            if (!userId) {
-                showStatus('User not authenticated. Waiting to connect to database...', true);
-                return;
-            }
-            
-            const blendingData = {};
-            inputIds.forEach(id => {
-                blendingData[id] = parseFloat(document.getElementById(id).value) || 0;
-            });
-
-            const userDocRef = doc(db, 'artifacts', appId, 'users', userId, 'blending_data', 'current');
-            showStatus('Saving changes...');
-            setDoc(userDocRef, blendingData)
-            .then(() => {
-                showStatus('Saved successfully!');
-            }).catch((error) => {
-                showStatus('Save failed: ' + error.message, true);
-            });
-        }, 500);
-
-        function updateChart() {
-            const qualities = calculateQualities();
-            myChart.data.datasets[0].data = Object.values(qualities);
-            myChart.update();
-            updateQualitiesList(qualities);
         }
 
         function updateInputs() {
@@ -313,12 +198,19 @@
             updateChart();
         }
 
+        function updateChart() {
+            const qualities = calculateQualities();
+            myChart.data.datasets[0].data = Object.values(qualities);
+            myChart.update();
+            updateQualitiesList(qualities);
+        }
+
         function resetToDefault() {
             inputIds.forEach(id => {
                 const input = document.getElementById(id);
                 input.value = components[id].defaultValue;
             });
-            updateValuesAndSave();
+            updateInputs();
         }
 
         function updateQualitiesList(qualities) {
@@ -338,79 +230,6 @@
                 listContainer.appendChild(item);
             }
         }
-
-        // Initialize Firebase and Authentication
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-        const initializeFirebase = async () => {
-            try {
-                let firebaseConfig = { projectId: "default-project-id" };
-                if (typeof __firebase_config === 'string' && __firebase_config.trim() !== '') {
-                    try {
-                        firebaseConfig = JSON.parse(__firebase_config);
-                    } catch (error) {
-                        console.error('Error parsing Firebase config:', error);
-                        showStatus('Warning: Invalid Firebase config, using default.', true);
-                    }
-                }
-                
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-
-                // Wait for the authentication state to be determined
-                onAuthStateChanged(auth, async (user) => {
-                    if (user) {
-                        userId = user.uid;
-                        userIdDisplay.textContent = `User ID: ${userId}`;
-                        showStatus('Signed in successfully! Loading your data...');
-                        // Once authenticated, load the user's data
-                        loadValues();
-                    } else {
-                        userId = null;
-                        userIdDisplay.textContent = 'User ID: N/A';
-                        // Sign in anonymously if not already authenticated
-                        try {
-                            if (typeof __initial_auth_token !== 'undefined') {
-                                await signInWithCustomToken(auth, __initial_auth_token);
-                            } else {
-                                await signInAnonymously(auth);
-                            }
-                        } catch (error) {
-                            showStatus('Authentication failed: ' + error.message, true);
-                        }
-                    }
-                });
-
-            } catch (error) {
-                showStatus('Firebase initialization failed: ' + error.message, true);
-            }
-        };
-
-        const loadValues = () => {
-            if (!userId) {
-                return;
-            }
-            const userDocRef = doc(db, 'artifacts', appId, 'users', userId, 'blending_data', 'current');
-            showStatus('Loading previous session...');
-            onSnapshot(userDocRef, (docSnap) => {
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    inputIds.forEach(id => {
-                        const input = document.getElementById(id);
-                        if(data[id] !== undefined) {
-                            input.value = data[id];
-                        }
-                    });
-                    updateInputs();
-                    showStatus('Session loaded successfully!');
-                } else {
-                    showStatus('No previous session found. Starting fresh.');
-                }
-            }, (error) => {
-                showStatus('Load failed: ' + error.message, true);
-            });
-        };
 
         window.onload = function () {
             const ctx = document.getElementById('qualityChart').getContext('2d');
@@ -473,20 +292,18 @@
                 }
             });
             
-            // Add event listeners to all number inputs
             inputIds.forEach(id => {
                 const input = document.getElementById(id);
-                input.addEventListener('input', updateValuesAndSave);
+                input.addEventListener('input', updateInputs);
             });
 
             document.getElementById('resetButton').addEventListener('click', resetToDefault);
 
-            // Make the chart responsive to window resize
             window.addEventListener('resize', () => {
                 myChart.resize();
             });
-
-            initializeFirebase();
+            
+            updateInputs();
         };
     </script>
 </body>
