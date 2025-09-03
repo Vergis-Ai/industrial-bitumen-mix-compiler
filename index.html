@@ -39,7 +39,7 @@
         <div class="mb-4 text-center">
             <p id="userIdDisplay" class="text-sm font-medium text-gray-500 break-all"></p>
             <div id="statusMessage" class="mt-2 p-2 rounded-lg text-sm text-gray-800 bg-gray-200">
-                Connecting to database...
+                Authenticating...
             </div>
         </div>
 
@@ -253,7 +253,6 @@
             // Normalize values to a 0-100 scale for the chart
             const finalValues = {};
             for (const quality in finalQualities) {
-                // Adjust values based on the current total to keep the chart visually stable.
                 const adjustmentFactor = totalPercentage > 0 ? 100 / totalPercentage : 1;
                 finalValues[quality] = Math.round(finalQualities[quality] * adjustmentFactor * 100);
             }
@@ -263,9 +262,9 @@
         const updateValuesAndSave = debounce(() => {
             updateInputs();
             
-            // Save data to Firestore
+            // Check if userId is available before saving
             if (!userId) {
-                showStatus('User not authenticated, skipping save.', true);
+                showStatus('User not authenticated. Waiting to connect to database...', true);
                 return;
             }
             
@@ -275,7 +274,7 @@
             });
 
             const userDocRef = doc(db, 'artifacts', appId, 'users', userId, 'blending_data', 'current');
-            showStatus('Saving...');
+            showStatus('Saving changes...');
             setDoc(userDocRef, blendingData)
             .then(() => {
                 showStatus('Saved successfully!');
@@ -350,7 +349,8 @@
                     try {
                         firebaseConfig = JSON.parse(__firebase_config);
                     } catch (error) {
-                        showStatus('Error parsing Firebase config: ' + error.message, true);
+                        console.error('Error parsing Firebase config:', error);
+                        showStatus('Warning: Invalid Firebase config, using default.', true);
                     }
                 }
                 
@@ -358,32 +358,42 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                if (typeof __initial_auth_token !== 'undefined') {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-
-                onAuthStateChanged(auth, (user) => {
+                // Wait for the authentication state to be determined
+                onAuthStateChanged(auth, async (user) => {
                     if (user) {
                         userId = user.uid;
                         userIdDisplay.textContent = `User ID: ${userId}`;
-                        const userDocRef = doc(db, 'artifacts', appId, 'users', userId, 'blending_data', 'current');
-                        loadValues(userDocRef);
+                        showStatus('Signed in successfully! Loading your data...');
+                        // Once authenticated, load the user's data
+                        loadValues();
                     } else {
                         userId = null;
                         userIdDisplay.textContent = 'User ID: N/A';
-                        showStatus('Signed out or failed to authenticate.', true);
+                        // Sign in anonymously if not already authenticated
+                        try {
+                            if (typeof __initial_auth_token !== 'undefined') {
+                                await signInWithCustomToken(auth, __initial_auth_token);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                        } catch (error) {
+                            showStatus('Authentication failed: ' + error.message, true);
+                        }
                     }
                 });
+
             } catch (error) {
                 showStatus('Firebase initialization failed: ' + error.message, true);
             }
         };
 
-        const loadValues = (docRef) => {
+        const loadValues = () => {
+            if (!userId) {
+                return;
+            }
+            const userDocRef = doc(db, 'artifacts', appId, 'users', userId, 'blending_data', 'current');
             showStatus('Loading previous session...');
-            onSnapshot(docRef, (docSnap) => {
+            onSnapshot(userDocRef, (docSnap) => {
                 if (docSnap.exists()) {
                     const data = docSnap.data();
                     inputIds.forEach(id => {
