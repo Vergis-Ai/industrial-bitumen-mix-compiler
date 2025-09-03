@@ -20,24 +20,14 @@
     input[type="number"] {
       -moz-appearance: textfield;
     }
-    .sr-only {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      padding: 0;
-      margin: -1px;
-      overflow: hidden;
-      clip: rect(0, 0, 0, 0);
-      border: 0;
-    }
   </style>
 </head>
 <body class="bg-slate-100 flex flex-col items-center justify-center p-6">
-  <div class="bg-white rounded-3xl shadow-xl p-8 max-w-4xl w-full">
+  <div class="bg-white rounded-3xl shadow-xl p-8 max-w-5xl w-full">
     <h1 class="text-3xl font-bold text-center mb-4">PMB Bitumen Mix Chart</h1>
 
     <!-- Inputs -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
       <div>
         <label for="c170Bitumen" class="block font-medium mb-1">C170 Bitumen (%)</label>
         <input type="number" id="c170Bitumen" value="70" step="0.01" min="0" max="100" class="w-full border p-2 rounded" />
@@ -51,12 +41,12 @@
         <input type="number" id="ha32CombiningOil" value="10" step="0.01" min="0" max="100" class="w-full border p-2 rounded" />
       </div>
       <div>
-        <label for="bitlinker" class="block font-medium mb-1">Ravasol™ BITLINKER-S6F (%)</label>
+        <label for="bitlinker" class="block font-medium mb-1">BITLINKER-S6F (%)</label>
         <input type="number" id="bitlinker" value="5" step="0.01" min="0" max="100" class="w-full border p-2 rounded" />
       </div>
     </div>
 
-    <!-- Total -->
+    <!-- Totals -->
     <div class="text-center mb-6">
       <p id="totalPercentage" class="text-xl font-bold">Total: 100%</p>
       <p id="remaining" class="text-gray-600">Remaining: 0%</p>
@@ -64,12 +54,18 @@
     </div>
 
     <!-- Chart -->
-    <div class="mb-6">
-      <canvas id="qualityChart" height="300"></canvas>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="bg-white p-4 rounded-xl shadow">
+        <canvas id="qualityChart" height="300"></canvas>
+      </div>
+      <div>
+        <h2 class="text-xl font-semibold mb-4">Mix Qualities</h2>
+        <div id="qualitiesList" class="grid grid-cols-1 sm:grid-cols-2 gap-4"></div>
+      </div>
     </div>
 
     <!-- Reset Button -->
-    <div class="text-center">
+    <div class="text-center mt-8">
       <button id="resetButton" class="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded">Reset to Default</button>
     </div>
   </div>
@@ -78,36 +74,60 @@
     const components = {
       c170Bitumen: {
         name: 'C170 Bitumen',
-        qualities: { Adhesion: 0.5, Durability: 0.6, Flexibility: 0.3, TemperatureResistance: 0.4, AgingResistance: 0.5, SettingTime: 0.8, Viscosity: 0.7 },
+        qualities: {
+          Adhesion: 0.5,
+          Durability: 0.6,
+          Flexibility: 0.3,
+          TemperatureResistance: 0.4,
+          AgingResistance: 0.5,
+          SettingTime: 0.8,
+          Viscosity: 0.7
+        },
         defaultValue: 70
       },
       sbs: {
         name: 'LG411 Radial',
-        qualities: { Adhesion: 0.8, Durability: 0.9, Flexibility: 1.0, TemperatureResistance: 0.9, AgingResistance: 0.9, SettingTime: 0.6, Viscosity: 0.9 },
+        qualities: {
+          Adhesion: 0.8,
+          Durability: 0.9,
+          Flexibility: 1.0,
+          TemperatureResistance: 0.9,
+          AgingResistance: 0.9,
+          SettingTime: 0.6,
+          Viscosity: 0.9
+        },
         defaultValue: 15
       },
       ha32CombiningOil: {
         name: 'Ha32 Combining Oil',
-        qualities: { Adhesion: 0.8, Durability: 0.3, Flexibility: 0.7, TemperatureResistance: 0.5, AgingResistance: 0.7, SettingTime: 1.0, Viscosity: 0.2 },
+        qualities: {
+          Adhesion: 0.8,
+          Durability: 0.3,
+          Flexibility: 0.7,
+          TemperatureResistance: 0.5,
+          AgingResistance: 0.7,
+          SettingTime: 1.0,
+          Viscosity: 0.2
+        },
         defaultValue: 10
       },
       bitlinker: {
-        name: 'Ravasol™ BITLINKER-S6F',
-        qualities: { Adhesion: 0.6, Durability: 0.8, Flexibility: 0.2, TemperatureResistance: 0.9, AgingResistance: 0.9, SettingTime: 0.3, Viscosity: 0.8 },
+        name: 'BITLINKER-S6F',
+        qualities: {
+          Adhesion: 0.6,
+          Durability: 0.8,
+          Flexibility: 0.2,
+          TemperatureResistance: 0.9,
+          AgingResistance: 0.9,
+          SettingTime: 0.3,
+          Viscosity: 0.8
+        },
         defaultValue: 5
       }
     };
 
-    const inputIds = ['c170Bitumen', 'sbs', 'ha32CombiningOil', 'bitlinker'];
+    const inputIds = Object.keys(components);
     let chart;
-
-    function debounce(func, delay) {
-      let timer;
-      return function(...args) {
-        clearTimeout(timer);
-        timer = setTimeout(() => func.apply(this, args), delay);
-      };
-    }
 
     function calculateQualities() {
       const final = {};
@@ -137,30 +157,45 @@
       return { qualities: result, total };
     }
 
-    function updateChart() {
-      const { qualities } = calculateQualities();
-      chart.data.datasets[0].data = Object.values(qualities);
-      chart.update();
+    function updateQualitiesList(qualities) {
+      const container = document.getElementById('qualitiesList');
+      container.innerHTML = '';
+
+      for (const q in qualities) {
+        const div = document.createElement('div');
+        div.className = 'bg-gray-100 p-3 rounded shadow flex justify-between items-center';
+        div.innerHTML = `
+          <span class="text-gray-700">${q.replace(/([A-Z])/g, ' $1').trim()}</span>
+          <span class="font-bold text-indigo-600">${qualities[q].toFixed(2)}%</span>
+        `;
+        container.appendChild(div);
+      }
     }
 
     function updateUI() {
-      const { total } = calculateQualities();
+      const { qualities, total } = calculateQualities();
+
+      // Update chart
+      chart.data.datasets[0].data = Object.values(qualities);
+      chart.update();
+
+      // Update total/remaining
       document.getElementById('totalPercentage').textContent = `Total: ${total.toFixed(2)}%`;
       const remaining = 100 - total;
-      const remainingEl = document.getElementById('remaining');
-      remainingEl.textContent = `Remaining: ${remaining.toFixed(2)}%`;
+      const remEl = document.getElementById('remaining');
+      remEl.textContent = `Remaining: ${remaining.toFixed(2)}%`;
 
       if (remaining === 0) {
-        remainingEl.classList.remove('text-red-500');
-        remainingEl.classList.add('text-green-600');
+        remEl.classList.remove('text-red-500');
+        remEl.classList.add('text-green-600');
         document.getElementById('normalizationWarning').classList.add('hidden');
       } else {
-        remainingEl.classList.remove('text-green-600');
-        remainingEl.classList.add('text-red-500');
+        remEl.classList.remove('text-green-600');
+        remEl.classList.add('text-red-500');
         document.getElementById('normalizationWarning').classList.remove('hidden');
       }
 
-      updateChart();
+      updateQualitiesList(qualities);
     }
 
     function resetInputs() {
@@ -170,21 +205,26 @@
       updateUI();
     }
 
-    window.onload = function () {
-      const ctx = document.getElementById('qualityChart').getContext('2d');
-      const qualities = Object.keys(components.c170Bitumen.qualities);
+    function debounce(func, wait) {
+      let timeout;
+      return function(...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), wait);
+      };
+    }
 
+    window.onload = () => {
+      const ctx = document.getElementById('qualityChart').getContext('2d');
       chart = new Chart(ctx, {
         type: 'radar',
         data: {
-          labels: qualities.map(q => q.replace(/([A-Z])/g, ' $1').trim()),
+          labels: Object.keys(components.c170Bitumen.qualities).map(q => q.replace(/([A-Z])/g, ' $1').trim()),
           datasets: [{
             label: 'Mix Qualities',
-            data: qualities.map(() => 0),
-            backgroundColor: 'rgba(99, 102, 241, 0.2)',
-            borderColor: 'rgba(99, 102, 241, 1)',
-            borderWidth: 2,
-            pointBackgroundColor: 'rgba(99, 102, 241, 1)'
+            data: [],
+            backgroundColor: 'rgba(99, 102, 241, 0.4)',
+            borderColor: 'rgb(99, 102, 241)',
+            pointBackgroundColor: 'rgb(99, 102, 241)'
           }]
         },
         options: {
@@ -199,21 +239,14 @@
         }
       });
 
-      // Setup listeners
       inputIds.forEach(id => {
         const input = document.getElementById(id);
-
         input.addEventListener('input', debounce(updateUI, 150));
-
-        input.addEventListener('blur', () => {
-          const val = parseFloat(input.value);
-          if (!isNaN(val)) input.value = val.toFixed(2);
-        });
       });
 
       document.getElementById('resetButton').addEventListener('click', resetInputs);
 
-      resetInputs();
+      resetInputs(); // Load default
     };
   </script>
 </body>
