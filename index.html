@@ -12,14 +12,6 @@
       font-family: 'Inter', sans-serif;
       background-color: #f3f4f6;
     }
-    .container {
-      max-width: 900px;
-    }
-    .input-group {
-      display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
-    }
     input[type="number"]::-webkit-outer-spin-button,
     input[type="number"]::-webkit-inner-spin-button {
       -webkit-appearance: none;
@@ -41,51 +33,44 @@
   </style>
 </head>
 <body class="bg-slate-100 flex flex-col items-center justify-center p-6">
-  <div class="container bg-white rounded-3xl shadow-xl p-8 max-w-lg w-full md:max-w-3xl lg:max-w-4xl">
-    <h1 class="text-3xl font-bold text-center text-gray-800 mb-2 md:text-4xl">PMB Bitumen Mix Chart</h1>
-    <p class="text-center text-gray-500 mb-8 max-w-md mx-auto">Enter the percentages of each component to see how the mix's qualities change in real time.</p>
+  <div class="bg-white rounded-3xl shadow-xl p-8 max-w-4xl w-full">
+    <h1 class="text-3xl font-bold text-center mb-4">PMB Bitumen Mix Chart</h1>
 
-    <!-- Input Fields -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-4">
-      <div class="bg-gray-50 p-6 rounded-2xl shadow-inner input-group">
-        <label for="c170Bitumen" class="text-gray-700 font-medium">C170 Bitumen (%)</label>
-        <input type="number" id="c170Bitumen" value="70" step="0.01" min="0" max="100" class="w-full p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
+    <!-- Inputs -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+      <div>
+        <label for="c170Bitumen" class="block font-medium mb-1">C170 Bitumen (%)</label>
+        <input type="number" id="c170Bitumen" value="70" step="0.01" min="0" max="100" class="w-full border p-2 rounded" />
       </div>
-      <div class="bg-gray-50 p-6 rounded-2xl shadow-inner input-group">
-        <label for="sbs" class="text-gray-700 font-medium">LG411 Radial (%)</label>
-        <input type="number" id="sbs" value="15" step="0.01" min="0" max="100" class="w-full p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
+      <div>
+        <label for="sbs" class="block font-medium mb-1">LG411 Radial (%)</label>
+        <input type="number" id="sbs" value="15" step="0.01" min="0" max="100" class="w-full border p-2 rounded" />
       </div>
-      <div class="bg-gray-50 p-6 rounded-2xl shadow-inner input-group">
-        <label for="ha32CombiningOil" class="text-gray-700 font-medium">Ha32 Combining Oil (%)</label>
-        <input type="number" id="ha32CombiningOil" value="10" step="0.01" min="0" max="100" class="w-full p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
+      <div>
+        <label for="ha32CombiningOil" class="block font-medium mb-1">Ha32 Combining Oil (%)</label>
+        <input type="number" id="ha32CombiningOil" value="10" step="0.01" min="0" max="100" class="w-full border p-2 rounded" />
       </div>
-      <div class="bg-gray-50 p-6 rounded-2xl shadow-inner input-group">
-        <label for="bitlinker" class="text-gray-700 font-medium">Ravasol™ BITLINKER-S6F (%)</label>
-        <input type="number" id="bitlinker" value="5" step="0.01" min="0" max="100" class="w-full p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
+      <div>
+        <label for="bitlinker" class="block font-medium mb-1">Ravasol™ BITLINKER-S6F (%)</label>
+        <input type="number" id="bitlinker" value="5" step="0.01" min="0" max="100" class="w-full border p-2 rounded" />
       </div>
     </div>
 
-    <!-- Total Display -->
-    <div class="text-center mb-8 font-bold flex flex-col sm:flex-row items-center justify-center gap-4">
-      <span id="totalPercentage" class="text-2xl text-gray-800">Total: 100%</span>
-      <span id="remaining" class="text-2xl flex items-center gap-2">
-        <span class="text-gray-500">Remaining: 0%</span>
-        <span id="statusIcon">✅</span>
-        <span class="sr-only" id="statusText">Valid</span>
-      </span>
-      <p id="normalizationWarning" class="text-sm text-yellow-600 hidden">Note: Values are normalized to 100% total.</p>
-      <button id="resetButton" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded-full transition-colors duration-200">Reset to Default</button>
+    <!-- Total -->
+    <div class="text-center mb-6">
+      <p id="totalPercentage" class="text-xl font-bold">Total: 100%</p>
+      <p id="remaining" class="text-gray-600">Remaining: 0%</p>
+      <p id="normalizationWarning" class="text-yellow-600 hidden">Note: Values are normalized to 100% total.</p>
     </div>
 
-    <!-- Chart + Qualities -->
-    <div class="flex flex-col lg:flex-row items-center lg:items-start justify-center gap-8 lg:gap-12">
-      <div class="w-full lg:w-1/2 p-6 bg-white rounded-3xl shadow-xl flex-shrink-0">
-        <canvas id="qualityChart"></canvas>
-      </div>
-      <div class="w-full lg:w-1/2 mt-6 lg:mt-0">
-        <h2 class="text-2xl font-bold text-gray-800 mb-4 text-center lg:text-left">Mix Qualities</h2>
-        <div id="qualitiesList" class="grid grid-cols-1 sm:grid-cols-2 gap-4"></div>
-      </div>
+    <!-- Chart -->
+    <div class="mb-6">
+      <canvas id="qualityChart" height="300"></canvas>
+    </div>
+
+    <!-- Reset Button -->
+    <div class="text-center">
+      <button id="resetButton" class="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded">Reset to Default</button>
     </div>
   </div>
 
@@ -114,37 +99,122 @@
     };
 
     const inputIds = ['c170Bitumen', 'sbs', 'ha32CombiningOil', 'bitlinker'];
-    let myChart;
+    let chart;
 
-    function debounce(func, wait) {
-      let timeout;
-      return function (...args) {
-        clearTimeout(timeout);
-        timeout = setTimeout(() => func.apply(this, args), wait);
+    function debounce(func, delay) {
+      let timer;
+      return function(...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => func.apply(this, args), delay);
       };
     }
 
     function calculateQualities() {
-      const finalQualities = {};
-      const qualityKeys = Object.keys(Object.values(components)[0].qualities);
-      qualityKeys.forEach(key => finalQualities[key] = 0);
+      const final = {};
+      const keys = Object.keys(components[inputIds[0]].qualities);
+      keys.forEach(k => final[k] = 0);
+      let total = 0;
 
-      let totalPercentage = 0;
-      for (const inputId of inputIds) {
-        const percentage = parseFloat(document.getElementById(inputId).value) || 0;
-        totalPercentage += percentage;
-      }
+      inputIds.forEach(id => {
+        const val = parseFloat(document.getElementById(id).value) || 0;
+        total += val;
+      });
 
-      for (const inputId of inputIds) {
-        const percentage = parseFloat(document.getElementById(inputId).value) || 0;
-        const component = components[inputId];
-        for (const quality in component.qualities) {
-          finalQualities[quality] += component.qualities[quality] * percentage / 100;
+      inputIds.forEach(id => {
+        const val = parseFloat(document.getElementById(id).value) || 0;
+        const comp = components[id];
+        for (const q in comp.qualities) {
+          final[q] += (comp.qualities[q] * val / 100);
         }
+      });
+
+      const scale = total > 0 ? 100 / total : 0;
+      const result = {};
+      for (const q in final) {
+        result[q] = Math.round(final[q] * scale * 100) / 100;
       }
 
-      const finalValues = {};
-      const adjustmentFactor = totalPercentage > 0 ? 100 / totalPercentage : 0;
-      for (const quality in finalQualities) {
-        final
-```
+      return { qualities: result, total };
+    }
+
+    function updateChart() {
+      const { qualities } = calculateQualities();
+      chart.data.datasets[0].data = Object.values(qualities);
+      chart.update();
+    }
+
+    function updateUI() {
+      const { total } = calculateQualities();
+      document.getElementById('totalPercentage').textContent = `Total: ${total.toFixed(2)}%`;
+      const remaining = 100 - total;
+      const remainingEl = document.getElementById('remaining');
+      remainingEl.textContent = `Remaining: ${remaining.toFixed(2)}%`;
+
+      if (remaining === 0) {
+        remainingEl.classList.remove('text-red-500');
+        remainingEl.classList.add('text-green-600');
+        document.getElementById('normalizationWarning').classList.add('hidden');
+      } else {
+        remainingEl.classList.remove('text-green-600');
+        remainingEl.classList.add('text-red-500');
+        document.getElementById('normalizationWarning').classList.remove('hidden');
+      }
+
+      updateChart();
+    }
+
+    function resetInputs() {
+      inputIds.forEach(id => {
+        document.getElementById(id).value = components[id].defaultValue.toFixed(2);
+      });
+      updateUI();
+    }
+
+    window.onload = function () {
+      const ctx = document.getElementById('qualityChart').getContext('2d');
+      const qualities = Object.keys(components.c170Bitumen.qualities);
+
+      chart = new Chart(ctx, {
+        type: 'radar',
+        data: {
+          labels: qualities.map(q => q.replace(/([A-Z])/g, ' $1').trim()),
+          datasets: [{
+            label: 'Mix Qualities',
+            data: qualities.map(() => 0),
+            backgroundColor: 'rgba(99, 102, 241, 0.2)',
+            borderColor: 'rgba(99, 102, 241, 1)',
+            borderWidth: 2,
+            pointBackgroundColor: 'rgba(99, 102, 241, 1)'
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            r: {
+              suggestedMin: 0,
+              suggestedMax: 1,
+              ticks: { stepSize: 0.2 }
+            }
+          }
+        }
+      });
+
+      // Setup listeners
+      inputIds.forEach(id => {
+        const input = document.getElementById(id);
+
+        input.addEventListener('input', debounce(updateUI, 150));
+
+        input.addEventListener('blur', () => {
+          const val = parseFloat(input.value);
+          if (!isNaN(val)) input.value = val.toFixed(2);
+        });
+      });
+
+      document.getElementById('resetButton').addEventListener('click', resetInputs);
+
+      resetInputs();
+    };
+  </script>
+</body>
+</html>
