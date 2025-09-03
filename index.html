@@ -342,10 +342,18 @@
 
         // Initialize Firebase and Authentication
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{"projectId": "default-project-id"}');
 
         const initializeFirebase = async () => {
             try {
+                let firebaseConfig = { projectId: "default-project-id" };
+                if (typeof __firebase_config === 'string' && __firebase_config.trim() !== '') {
+                    try {
+                        firebaseConfig = JSON.parse(__firebase_config);
+                    } catch (error) {
+                        showStatus('Error parsing Firebase config: ' + error.message, true);
+                    }
+                }
+                
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
