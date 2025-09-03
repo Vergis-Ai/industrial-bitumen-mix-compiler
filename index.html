@@ -28,6 +28,16 @@
         input[type="number"] {
             -moz-appearance: textfield;
         }
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            border: 0;
+        }
     </style>
 </head>
 <body class="bg-slate-100 flex flex-col items-center justify-center p-6">
@@ -40,32 +50,37 @@
             <!-- Component 1: C170 Bitumen -->
             <div class="bg-gray-50 p-6 rounded-2xl shadow-inner input-group">
                 <label for="c170Bitumen" class="text-gray-700 font-medium">C170 Bitumen (%)</label>
-                <input type="number" id="c170Bitumen" name="c170Bitumen" min="0" max="100" value="70" class="w-full p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors">
+                <input type="number" id="c170Bitumen" name="c170Bitumen" min="0" max="100" step="0.01" value="70" aria-label="Percentage of C170 Bitumen" class="w-full p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors">
             </div>
 
             <!-- Component 2: LG411 Radial -->
             <div class="bg-gray-50 p-6 rounded-2xl shadow-inner input-group">
                 <label for="sbs" class="text-gray-700 font-medium">LG411 Radial (%)</label>
-                <input type="number" id="sbs" name="sbs" min="0" max="100" value="15" class="w-full p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors">
+                <input type="number" id="sbs" name="sbs" min="0" max="100" step="0.01" value="15" aria-label="Percentage of LG411 Radial" class="w-full p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors">
             </div>
 
-            <!-- Component 3: Ha32 Combining oil -->
+            <!-- Component 3: Ha32 Combining Oil -->
             <div class="bg-gray-50 p-6 rounded-2xl shadow-inner input-group">
                 <label for="ha32CombiningOil" class="text-gray-700 font-medium">Ha32 Combining Oil (%)</label>
-                <input type="number" id="ha32CombiningOil" name="ha32CombiningOil" min="0" max="100" value="10" class="w-full p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors">
+                <input type="number" id="ha32CombiningOil" name="ha32CombiningOil" min="0" max="100" step="0.01" value="10" aria-label="Percentage of Ha32 Combining Oil" class="w-full p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors">
             </div>
 
             <!-- Component 4: Bitlinker -->
             <div class="bg-gray-50 p-6 rounded-2xl shadow-inner input-group">
                 <label for="bitlinker" class="text-gray-700 font-medium">Ravasol™ BITLINKER-S6F (%)</label>
-                <input type="number" id="bitlinker" name="bitlinker" min="0" max="100" value="5" class="w-full p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors">
+                <input type="number" id="bitlinker" name="bitlinker" min="0" max="100" step="0.01" value="5" aria-label="Percentage of Ravasol BITLINKER-S6F" class="w-full p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors">
             </div>
         </div>
 
         <!-- Total Percentage Display -->
         <div class="text-center mb-8 font-bold flex flex-col sm:flex-row items-center justify-center gap-4">
             <span id="totalPercentage" class="text-2xl text-gray-800">Total: 100%</span>
-            <span id="remaining" class="text-2xl text-gray-500">Remaining: 0%</span>
+            <span id="remaining" class="text-2xl flex items-center gap-2">
+                <span class="text-gray-500">Remaining: 0%</span>
+                <span id="statusIcon" aria-hidden="true">✅</span>
+                <span class="sr-only" id="statusText">Valid</span>
+            </span>
+            <p id="normalizationWarning" class="text-sm text-yellow-600 hidden">Note: Values are normalized to 100% total.</p>
             <button id="resetButton" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded-full transition-colors duration-200">
                 Reset to Default
             </button>
@@ -148,6 +163,15 @@
         const inputIds = ['c170Bitumen', 'sbs', 'ha32CombiningOil', 'bitlinker'];
         let myChart;
 
+        // Debounce function to limit frequent updates
+        function debounce(func, wait) {
+            let timeout;
+            return function (...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), wait);
+            };
+        }
+
         function calculateQualities() {
             const finalQualities = {};
             const qualityKeys = Object.keys(Object.values(components)[0].qualities);
@@ -168,11 +192,11 @@
             }
 
             const finalValues = {};
+            const adjustmentFactor = totalPercentage > 0 ? 100 / totalPercentage : 0;
             for (const quality in finalQualities) {
-                const adjustmentFactor = totalPercentage > 0 ? 100 / totalPercentage : 1;
-                finalValues[quality] = Math.round(finalQualities[quality] * adjustmentFactor * 100);
+                finalValues[quality] = Math.round(finalQualities[quality] * adjustmentFactor * 100) / 100;
             }
-            return finalValues;
+            return { values: finalValues, totalPercentage };
         }
 
         function updateInputs() {
@@ -183,37 +207,48 @@
             });
             total = parseFloat(total.toFixed(2));
 
-            document.getElementById('totalPercentage').textContent = `Total: ${total}%`;
+            const totalPercentageElement = document.getElementById('totalPercentage');
+            const remainingElement = document.getElementById('remaining').querySelector('span.text-gray-500');
+            const statusIconElement = document.getElementById('statusIcon');
+            const statusTextElement = document.getElementById('statusText');
+            const normalizationWarning = document.getElementById('normalizationWarning');
+
+            totalPercentageElement.textContent = `Total: ${total}%`;
             const remaining = parseFloat((100 - total).toFixed(2));
-            const remainingElement = document.getElementById('remaining');
             remainingElement.textContent = `Remaining: ${remaining}%`;
 
             if (remaining === 0) {
                 remainingElement.classList.remove('text-red-500');
                 remainingElement.classList.add('text-green-500');
+                statusIconElement.textContent = '✅';
+                statusTextElement.textContent = 'Valid';
+                normalizationWarning.classList.add('hidden');
             } else {
                 remainingElement.classList.remove('text-green-500');
                 remainingElement.classList.add('text-red-500');
+                statusIconElement.textContent = '⚠️';
+                statusTextElement.textContent = 'Invalid';
+                normalizationWarning.classList.remove('hidden');
             }
             updateChart();
         }
 
         function updateChart() {
-            const qualities = calculateQualities();
+            const { values: qualities, totalPercentage } = calculateQualities();
             myChart.data.datasets[0].data = Object.values(qualities);
             myChart.update();
-            updateQualitiesList(qualities);
+            updateQualitiesList(qualities, totalPercentage);
         }
 
         function resetToDefault() {
             inputIds.forEach(id => {
                 const input = document.getElementById(id);
-                input.value = components[id].defaultValue;
+                input.value = components[id].defaultValue.toFixed(2);
             });
             updateInputs();
         }
 
-        function updateQualitiesList(qualities) {
+        function updateQualitiesList(qualities, totalPercentage) {
             const listContainer = document.getElementById('qualitiesList');
             listContainer.innerHTML = '';
             for (const quality in qualities) {
@@ -224,7 +259,7 @@
                 qualityName.textContent = quality.replace(/([A-Z])/g, ' $1').trim();
                 const qualityValue = document.createElement('span');
                 qualityValue.className = 'text-lg font-bold text-indigo-600';
-                qualityValue.textContent = qualities[quality] + '%';
+                qualityValue.textContent = qualities[quality].toFixed(2) + '%';
                 item.appendChild(qualityName);
                 item.appendChild(qualityValue);
                 listContainer.appendChild(item);
@@ -233,8 +268,7 @@
 
         window.onload = function () {
             const ctx = document.getElementById('qualityChart').getContext('2d');
-            const qualities = calculateQualities();
-            const dataValues = Object.values(qualities);
+            const { values: qualities } = calculateQualities();
             const qualityLabels = Object.keys(qualities).map(label => label.replace(/([A-Z])/g, ' $1').trim());
 
             myChart = new Chart(ctx, {
@@ -243,7 +277,7 @@
                     labels: qualityLabels,
                     datasets: [{
                         label: 'Mix Qualities',
-                        data: dataValues,
+                        data: Object.values(qualities),
                         backgroundColor: 'rgba(99, 102, 241, 0.4)',
                         borderColor: 'rgb(99, 102, 241)',
                         pointBackgroundColor: 'rgb(99, 102, 241)',
@@ -260,7 +294,7 @@
                             angleLines: { color: 'rgba(0, 0, 0, 0.1)' },
                             grid: { color: 'rgba(0, 0, 0, 0.1)' },
                             pointLabels: {
-                                font: { size: 12, weight: 'bold' },
+                                font: { size: window.innerWidth < 768 ? 10 : 12, weight: 'bold' },
                                 color: '#4b5563'
                             },
                             ticks: {
@@ -282,7 +316,7 @@
                                         label += ': ';
                                     }
                                     if (context.parsed.r !== null) {
-                                        label += context.parsed.r + '%';
+                                        label += context.parsed.r.toFixed(2) + '%';
                                     }
                                     return label;
                                 }
@@ -291,10 +325,18 @@
                     }
                 }
             });
-            
+
             inputIds.forEach(id => {
                 const input = document.getElementById(id);
-                input.addEventListener('input', updateInputs);
+                input.addEventListener('input', () => {
+                    let value = parseFloat(input.value) || 0;
+                    if (value < 0) {
+                        input.value = 0;
+                    } else {
+                        input.value = value.toFixed(2);
+                    }
+                    debouncedUpdateInputs();
+                });
             });
 
             document.getElementById('resetButton').addEventListener('click', resetToDefault);
@@ -302,7 +344,8 @@
             window.addEventListener('resize', () => {
                 myChart.resize();
             });
-            
+
+            const debouncedUpdateInputs = debounce(updateInputs, 300);
             updateInputs();
         };
     </script>
