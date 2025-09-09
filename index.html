@@ -1,4 +1,3 @@
-```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -9,14 +8,12 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
         body {
             font-family: 'Inter', sans-serif;
             background-color: #f3f4f6;
-            min-height: 100vh;
         }
         .container {
-            max-width: 1200px;
+            max-width: 1024px;
         }
         input[type="number"]::-webkit-outer-spin-button,
         input[type="number"]::-webkit-inner-spin-button {
@@ -36,9 +33,8 @@
             clip: rect(0, 0, 0, 0);
             border: 0;
         }
-        input[type=checkbox] {
-            width: 20px;
-            height: 20px;
+        .invalid-input {
+            border-color: #dc2626;
         }
     </style>
 </head>
@@ -46,7 +42,7 @@
     <div class="container bg-white rounded-3xl shadow-xl p-8 max-w-lg w-full md:max-w-3xl lg:max-w-4xl">
         <h1 class="text-3xl font-bold text-center text-gray-800 mb-4 md:text-4xl">Advanced PMB Bitumen Mix Calculator</h1>
         <p class="text-center text-gray-500 mb-8 max-w-md mx-auto">
-            Enter the mix details to see updated mix qualities in real time. The total percentage for main components must be 100%.
+            Enter the mix details to see updated mix qualities in real time. The total percentage for main components and SARA composition must each be 100%.
         </p>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
@@ -132,11 +128,11 @@
                 <h2 class="text-2xl font-bold text-gray-800 border-b pb-2">Mix Qualities</h2>
 
                 <div class="bg-gray-100 p-4 rounded-xl shadow-inner min-h-[300px] flex items-center justify-center">
-                    <canvas id="qualityChart" aria-label="Mix qualities chart" role="img"></canvas>
+                    <canvas id="qualityChart" aria-label="Mix qualities radar chart" role="img"></canvas>
                 </div>
 
                 <div class="bg-indigo-50 rounded-lg p-6">
-                    <ul class="grid grid-cols-2 gap-4 text-indigo-900 font-medium text-lg">
+                    <ul class="grid grid-cols-2 gap-4 text-indigo-900 font-medium text-lg" aria-live="polite">
                         <li>Adhesion: <span id="adhesion" class="font-bold">--</span>%</li>
                         <li>Durability: <span id="durability" class="font-bold">--</span>%</li>
                         <li>Flexibility: <span id="flexibility" class="font-bold">--</span>%</li>
@@ -150,7 +146,7 @@
             </div>
         </div>
 
-        <div class="text-center mb-6 font-bold flex flex-col sm:flex-row items-center justify-center gap-6 p-4 border-t border-gray-200">
+        <div class="text-center mb-6 font-bold flex flex-col sm:flex-row items-center justify-center gap-6 p-4 border-t border-gray-200" aria-live="polite">
             <span id="totalPercentage" class="text-xl text-gray-800">Total Bitumen Mix: --%</span>
             <span id="remaining" class="text-xl flex items-center gap-2">
                 <span class="text-gray-500">Remaining: --%</span>
@@ -162,11 +158,31 @@
             </button>
         </div>
     </div>
+    
+    <!-- Custom Modal for Confirmation -->
+    <div id="resetModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center z-50">
+        <div class="relative bg-white rounded-lg shadow-xl p-8 m-4 max-w-sm w-full">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">Confirm Reset</h3>
+            <p class="text-gray-600 mb-6">Are you sure you want to reset all values to their default settings?</p>
+            <div class="flex justify-end space-x-4">
+                <button id="resetCancelBtn" class="px-6 py-2 rounded-full text-gray-600 font-semibold border border-gray-300 hover:bg-gray-100 transition-colors duration-300">
+                    Cancel
+                </button>
+                <button id="resetConfirmBtn" class="px-6 py-2 rounded-full bg-red-500 text-white font-semibold hover:bg-red-600 transition-colors duration-300">
+                    Reset
+                </button>
+            </div>
+        </div>
+    </div>
 
     <script>
         (() => {
             // Helper to get DOM elements safely
-            const getEl = id => document.getElementById(id) || null;
+            const getEl = id => {
+                const el = document.getElementById(id);
+                if (!el) console.warn(`Element with ID "${id}" not found`);
+                return el;
+            };
 
             // DOM references
             const inputs = {
@@ -189,6 +205,11 @@
             const statusIconEl = getEl('statusIcon');
             const statusTextEl = getEl('statusText');
             const resetButton = getEl('resetButton');
+
+            // Modal references
+            const resetModal = getEl('resetModal');
+            const resetConfirmBtn = getEl('resetConfirmBtn');
+            const resetCancelBtn = getEl('resetCancelBtn');
 
             // Quality spans
             const qualityEls = {
@@ -218,13 +239,18 @@
                 asphaltenes: 15,
             };
 
-            // Polymer effect multipliers on properties (Base: C170/SBS blend)
-            // Using SBS as the base effect since it is a primary mix component.
+            // Polymer effect multipliers (base scores, scaled later)
             const pEffect = {
-                adhesion: 1.2, durability: 1.15, flexibility: 1.3, tempResistance: 1.1, agingResistance: 1.2, elasticRecovery: 70, softeningPoint: 70
+                adhesion: 0.8,
+                durability: 0.75,
+                flexibility: 0.85,
+                tempResistance: 0.7,
+                agingResistance: 0.8,
+                elasticRecovery: 50,
+                softeningPoint: 50
             };
 
-            // Additives effect boosts (as multipliers on current score)
+            // Additives effect boosts (multipliers)
             const additiveEffects = {
                 carbonNanotubes: { adhesion: 1.05, durability: 1.10, flexibility: 1.03, tempResistance: 1.07, agingResistance: 1.10 },
                 syntheticWax: { adhesion: 1.02, durability: 1.05, flexibility: 1.04, tempResistance: 1.03, agingResistance: 1.02 },
@@ -233,220 +259,300 @@
             // Chart setup
             let chart = null;
             const ctxEl = getEl('qualityChart');
-
-            if (ctxEl) {
+            if (ctxEl && ctxEl.getContext) {
                 const ctx = ctxEl.getContext('2d');
-                chart = new Chart(ctx, {
-                    type: 'radar',
-                    data: {
-                        labels: ['Adhesion', 'Durability', 'Flexibility', 'Temp Resistance', 'Aging Resistance'],
-                        datasets: [{
-                            label: 'Mix Qualities (Score out of 100)',
-                            data: [],
-                            fill: true,
-                            backgroundColor: 'rgba(99,102,241,0.2)',
-                            borderColor: 'rgba(99,102,241,1)',
-                            pointBackgroundColor: 'rgba(99,102,241,1)',
-                            pointBorderColor: '#fff',
-                            pointHoverBackgroundColor: '#fff',
-                            pointHoverBorderColor: 'rgba(99,102,241,1)',
-                            borderWidth: 2
-                        }]
-                    },
-                    options: {
-                        elements: { line: { tension: 0 } },
-                        scales: {
-                            r: {
-                                beginAtZero: true,
-                                max: 100, // Scale to 100 for percentages
-                                pointLabels: { font: { size: 14 } },
-                                grid: { color: 'rgba(200, 200, 200, 0.2)' },
-                                ticks: { stepSize: 20, callback: v => v + '%' }
-                            }
+                if (ctx) {
+                    chart = new Chart(ctx, {
+                        type: 'radar',
+                        data: {
+                            labels: ['Adhesion', 'Durability', 'Flexibility', 'Temp Resistance', 'Aging Resistance'],
+                            datasets: [{
+                                label: 'Mix Qualities (Score out of 100)',
+                                data: [0, 0, 0, 0, 0],
+                                fill: true,
+                                backgroundColor: 'rgba(99,102,241,0.2)',
+                                borderColor: 'rgba(99,102,241,1)',
+                                pointBackgroundColor: 'rgba(99,102,241,1)',
+                                pointBorderColor: '#fff',
+                                pointHoverBackgroundColor: '#fff',
+                                pointHoverBorderColor: 'rgba(99,102,241,1)',
+                                borderWidth: 2
+                            }]
                         },
-                        plugins: {
-                            legend: { display: false },
-                            tooltip: {
-                                callbacks: {
-                                    label: ctx => `${ctx.label}: ${ctx.parsed.r.toFixed(1)}%`
+                        options: {
+                            elements: { line: { tension: 0 } },
+                            scales: {
+                                r: {
+                                    beginAtZero: true,
+                                    max: 100,
+                                    pointLabels: { font: { size: 14 } },
+                                    grid: { color: 'rgba(200, 200, 200, 0.2)' },
+                                    ticks: { stepSize: 20, callback: v => v + '%' }
                                 }
-                            }
-                        },
-                        responsive: true,
-                        maintainAspectRatio: false
-                    }
-                });
+                            },
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: {
+                                    callbacks: {
+                                        label: ctx => `${ctx.label}: ${ctx.parsed.r.toFixed(1)}%`
+                                    }
+                                }
+                            },
+                            responsive: true,
+                            maintainAspectRatio: false
+                        }
+                    });
+                } else {
+                    console.error('Canvas context not available');
+                }
+            } else {
+                console.error('Canvas element not found');
             }
 
             // Helpers
-            const clampRound = (num, min = 0, max = 100, decimals = 2) => Number(Math.min(Math.max(num, min), max).toFixed(decimals));
+            const clampRound = (num, min = 0, max = 100, decimals = 2) => {
+                const clamped = Math.min(Math.max(num, min), max);
+                return Number(clamped.toFixed(decimals));
+            };
             const getInputValue = el => {
                 if (!el) return 0;
                 if (el.type === 'checkbox') return el.checked;
-                return el.value === '' ? 0 : Number(el.value);
+                const val = el.value === '' || isNaN(el.value) ? 0 : Number(el.value);
+                return val < 0 ? 0 : val;
             };
 
             // Main calculation function
             const updateCalculations = () => {
-                const componentInputs = [inputs.c170Bitumen, inputs.sbs, inputs.ha32CombiningOil, inputs.bitlinker];
-                const saraInputs = [inputs.saturates, inputs.aromatics, inputs.resins, inputs.asphaltenes];
+                try {
+                    const componentInputs = [inputs.c170Bitumen, inputs.sbs, inputs.ha32CombiningOil, inputs.bitlinker];
+                    const saraInputs = [inputs.saturates, inputs.aromatics, inputs.resins, inputs.asphaltenes];
 
-                const c170 = getInputValue(inputs.c170Bitumen);
-                const sbs = getInputValue(inputs.sbs);
-                const ha32 = getInputValue(inputs.ha32CombiningOil);
-                const bitlinker = getInputValue(inputs.bitlinker);
-                const rap = getInputValue(inputs.rap);
-                const ras = getInputValue(inputs.ras);
-                const hasCNT = getInputValue(inputs.carbonNanotubes);
-                const hasWax = getInputValue(inputs.syntheticWax);
-                const saturates = getInputValue(inputs.saturates);
-                const aromatics = getInputValue(inputs.aromatics);
-                const resins = getInputValue(inputs.resins);
-                const asphaltenes = getInputValue(inputs.asphaltenes);
+                    // Reset invalid input styles
+                    [...componentInputs, ...saraInputs].forEach(input => {
+                        if (input && input.type === 'number') input.classList.remove('invalid-input');
+                    });
 
-                // --- Mix Component Totals ---
-                const totalComponents = clampRound(c170 + sbs + ha32 + bitlinker, 0, 999, 2);
-                const remaining = clampRound(100 - totalComponents, -999, 100, 2);
-                let isValid = Math.abs(totalComponents - 100) < 0.5;
-                let statusMessage = isValid ? 'Valid' : 'Warning: Not 100%';
+                    // Get input values
+                    const c170 = getInputValue(inputs.c170Bitumen);
+                    const sbs = getInputValue(inputs.sbs);
+                    const ha32 = getInputValue(inputs.ha32CombiningOil);
+                    const bitlinker = getInputValue(inputs.bitlinker);
+                    const rap = getInputValue(inputs.rap);
+                    const ras = getInputValue(inputs.ras);
+                    const hasCNT = getInputValue(inputs.carbonNanotubes);
+                    const hasWax = getInputValue(inputs.syntheticWax);
+                    const saturates = getInputValue(inputs.saturates);
+                    const aromatics = getInputValue(inputs.aromatics);
+                    const resins = getInputValue(inputs.resins);
+                    const asphaltenes = getInputValue(inputs.asphaltenes);
 
-                if (totalPercentageEl) totalPercentageEl.textContent = `Total Bitumen Mix: ${totalComponents.toFixed(2)}%`;
-                if (remainingEl) remainingEl.querySelector('span').textContent = `Remaining: ${remaining.toFixed(2)}%`;
+                    // --- Mix Component Totals ---
+                    const totalComponents = clampRound(c170 + sbs + ha32 + bitlinker, 0, 100, 2);
+                    const remaining = clampRound(100 - totalComponents, -100, 100, 2);
+                    const isValid = Math.abs(totalComponents - 100) < 0.5;
 
-                if (remainingEl) remainingEl.querySelector('span').classList.toggle('text-red-600', !isValid);
+                    // --- SARA Totals ---
+                    const totalSara = clampRound(saturates + aromatics + resins + asphaltenes, 0, 100, 2);
+                    const saraValid = Math.abs(totalSara - 100) < 0.5;
 
-                // --- SARA Totals ---
-                const totalSara = clampRound(saturates + aromatics + resins + asphaltenes, 0, 999, 2);
-                const saraValid = Math.abs(totalSara - 100) < 0.5;
+                    // Highlight invalid inputs
+                    if (!isValid) {
+                        componentInputs.forEach(input => {
+                            if (input && getInputValue(input) > 0) input.classList.add('invalid-input');
+                        });
+                    }
+                    if (!saraValid) {
+                        saraInputs.forEach(input => {
+                            if (input && getInputValue(input) > 0) input.classList.add('invalid-input');
+                        });
+                    }
 
-                if (!saraValid) {
-                    statusIconEl.textContent = '⚠️';
-                    statusMessage = 'SARA must total 100%';
-                    isValid = false; // Override mix total validity if SARA is off
-                    if (remainingEl) remainingEl.querySelector('span').classList.add('text-red-600');
-                } else if (isValid) {
-                    statusIconEl.textContent = '✅';
-                    statusMessage = 'Valid';
-                } else {
-                    statusIconEl.textContent = '⚠️';
-                    statusMessage = 'Warning: Not 100%';
-                }
-                
-                if (statusTextEl) statusTextEl.textContent = statusMessage;
+                    // Update totals display
+                    if (totalPercentageEl) totalPercentageEl.textContent = `Total Bitumen Mix: ${totalComponents.toFixed(2)}%`;
+                    if (remainingEl) remainingEl.querySelector('span').textContent = `Remaining: ${remaining.toFixed(2)}%`;
+                    if (remainingEl) remainingEl.querySelector('span').classList.toggle('text-red-600', !isValid || !saraValid);
 
+                    // Status messages
+                    let statusMessages = [];
+                    if (!isValid) statusMessages.push('Main components must total 100%');
+                    if (!saraValid) statusMessages.push('SARA components must total 100%');
+                    const statusMessage = statusMessages.length ? statusMessages.join(' and ') : 'Valid';
+                    if (statusTextEl) statusTextEl.textContent = statusMessage;
+                    if (statusIconEl) statusIconEl.textContent = statusMessages.length ? '⚠️' : '✅';
 
-                // --- Quality Calculation (Scores out of 1.0 base, scaled to 100% for display/chart) ---
+                    // --- Quality Calculation ---
+                    // Base qualities (scaled to 0–1, then to 100% for display)
+                    let adhesion = pEffect.adhesion;
+                    let durability = pEffect.durability;
+                    let flexibility = pEffect.flexibility;
+                    let tempResistance = pEffect.tempResistance;
+                    let agingResistance = pEffect.agingResistance;
 
-                // Base qualities (already SBS-modified)
-                let adhesion = pEffect.adhesion;
-                let durability = pEffect.durability;
-                let flexibility = pEffect.flexibility;
-                let tempResistance = pEffect.tempResistance;
-                let agingResistance = pEffect.agingResistance;
+                    // Apply SARA effects (normalized to avoid extreme values)
+                    if (saraValid) {
+                        adhesion = (resins / 100) * 0.5 + (aromatics / 100) * 0.3 + (asphaltenes / 100) * 0.2;
+                        durability = (asphaltenes / 100) * 0.6 + (resins / 100) * 0.3 + (saturates / 100) * 0.1;
+                        flexibility = (aromatics / 100) * 0.7 + (saturates / 100) * 0.2 + (resins / 100) * 0.1;
+                        tempResistance = (asphaltenes / 100) * 0.8 + (resins / 100) * 0.15 + (saturates / 100) * 0.05;
+                        agingResistance = (resins / 100) * 0.6 + (asphaltenes / 100) * 0.3 + (aromatics / 100) * 0.1;
+                    } else {
+                        // Use default values if SARA composition is invalid to prevent skewed results
+                        adhesion = pEffect.adhesion;
+                        durability = pEffect.durability;
+                        flexibility = pEffect.flexibility;
+                        tempResistance = pEffect.tempResistance;
+                        agingResistance = pEffect.agingResistance;
+                    }
 
-                // Additive effects (multiplicative boost)
-                if (hasCNT) {
-                    adhesion *= additiveEffects.carbonNanotubes.adhesion;
-                    durability *= additiveEffects.carbonNanotubes.durability;
-                    flexibility *= additiveEffects.carbonNanotubes.flexibility;
-                    tempResistance *= additiveEffects.carbonNanotubes.tempResistance;
-                    agingResistance *= additiveEffects.carbonNanotubes.agingResistance;
-                }
-                if (hasWax) {
-                    adhesion *= additiveEffects.syntheticWax.adhesion;
-                    durability *= additiveEffects.syntheticWax.durability;
-                    flexibility *= additiveEffects.syntheticWax.flexibility;
-                    tempResistance *= additiveEffects.syntheticWax.tempResistance;
-                    agingResistance *= additiveEffects.syntheticWax.agingResistance;
-                }
+                    // Apply SBS and Bitlinker effects
+                    // Polymer effects are now scaled by their percentage contribution
+                    const totalPolymerAndAdditives = sbs + ha32 + bitlinker;
+                    if (totalPolymerAndAdditives > 0) {
+                        const sbsFactor = sbs / totalPolymerAndAdditives;
+                        const bitlinkerFactor = bitlinker / totalPolymerAndAdditives;
 
-                // SARA effects (Additive based on component % - arbitrary model)
-                // Normalize SARA components for impact
-                adhesion += (resins / 100) * 0.2;
-                durability += (asphaltenes / 100) * 0.15;
-                flexibility += (aromatics / 100) * 0.2;
-                tempResistance += (asphaltenes / 100) * 0.1;
-                agingResistance += (resins / 100) * 0.1 + (asphaltenes / 100) * 0.1;
+                        adhesion = adhesion * (1 + sbsFactor * 0.2 + bitlinkerFactor * 0.1);
+                        durability = durability * (1 + sbsFactor * 0.3 + bitlinkerFactor * 0.15);
+                        flexibility = flexibility * (1 + sbsFactor * 0.4 + bitlinkerFactor * 0.1);
+                        tempResistance = tempResistance * (1 + sbsFactor * 0.35 + bitlinkerFactor * 0.2);
+                        agingResistance = agingResistance * (1 + sbsFactor * 0.3 + bitlinkerFactor * 0.15);
+                    }
 
-                // Elastic Recovery, Softening Point, Setting Time
-                let elasticRecovery = pEffect.elasticRecovery;
-                let softeningPoint = pEffect.softeningPoint;
-                let settingTime = 120; // Base setting time in minutes
+                    // Apply additive effects (multiplicative)
+                    if (hasCNT) {
+                        adhesion *= additiveEffects.carbonNanotubes.adhesion;
+                        durability *= additiveEffects.carbonNanotubes.durability;
+                        flexibility *= additiveEffects.carbonNanotubes.flexibility;
+                        tempResistance *= additiveEffects.carbonNanotubes.tempResistance;
+                        agingResistance *= additiveEffects.carbonNanotubes.agingResistance;
+                    }
+                    if (hasWax) {
+                        adhesion *= additiveEffects.syntheticWax.adhesion;
+                        durability *= additiveEffects.syntheticWax.durability;
+                        flexibility *= additiveEffects.syntheticWax.flexibility;
+                        tempResistance *= additiveEffects.syntheticWax.tempResistance;
+                        agingResistance *= additiveEffects.syntheticWax.agingResistance;
+                    }
 
-                // Polymer/Recycling impact on other metrics
-                elasticRecovery += (sbs * 0.5) - (rap * 0.1) - (ras * 0.05); // SBS improves, RAP/RAS reduce
-                softeningPoint += (asphaltenes * 0.1) - (aromatics * 0.05); // Asphaltenes increase, Aromatics decrease
+                    // Other metrics
+                    const sbsWeight = sbs / 100;
+                    const rapRasWeight = (rap + ras) / 100;
 
-                // Bitlinker impact (arbitrary model)
-                settingTime -= (bitlinker * 5); // Bitlinker reduces setting time
+                    let elasticRecovery = 45 + (sbsWeight * 50) - (rapRasWeight * 10);
+                    let softeningPoint = 50 + (asphaltenes / 100) * 15 + (sbsWeight * 20) - (aromatics / 100) * 5;
+                    let settingTime = 120 - (bitlinker / 100) * 50 + (hasWax ? 15 : 0) - (hasCNT ? 5 : 0);
 
-                // Final results (clamped to sensible ranges and multiplied by 100 for display percentage)
-                const finalResults = {
-                    adhesion: clampRound(adhesion * 100, 40, 100, 1),
-                    durability: clampRound(durability * 100, 40, 100, 1),
-                    flexibility: clampRound(flexibility * 100, 40, 100, 1),
-                    tempResistance: clampRound(tempResistance * 100, 40, 100, 1),
-                    agingResistance: clampRound(agingResistance * 100, 40, 100, 1),
-                    elasticRecovery: clampRound(elasticRecovery, 30, 95, 1),
-                    softeningPoint: clampRound(softeningPoint, 55, 90, 1),
-                    settingTime: clampRound(settingTime, 10, 180, 0),
-                };
+                    // Final results (clamped and scaled to 100)
+                    const finalResults = {
+                        adhesion: clampRound(adhesion * 100, 40, 100, 1),
+                        durability: clampRound(durability * 100, 40, 100, 1),
+                        flexibility: clampRound(flexibility * 100, 40, 100, 1),
+                        tempResistance: clampRound(tempResistance * 100, 40, 100, 1),
+                        agingResistance: clampRound(agingResistance * 100, 40, 100, 1),
+                        elasticRecovery: clampRound(elasticRecovery, 30, 95, 1),
+                        softeningPoint: clampRound(softeningPoint, 55, 90, 1),
+                        settingTime: clampRound(settingTime, 10, 180, 0),
+                    };
 
-                // Update DOM elements
-                if (qualityEls.adhesion) qualityEls.adhesion.textContent = finalResults.adhesion.toFixed(1);
-                if (qualityEls.durability) qualityEls.durability.textContent = finalResults.durability.toFixed(1);
-                if (qualityEls.flexibility) qualityEls.flexibility.textContent = finalResults.flexibility.toFixed(1);
-                if (qualityEls.tempResistance) qualityEls.tempResistance.textContent = finalResults.tempResistance.toFixed(1);
-                if (qualityEls.agingResistance) qualityEls.agingResistance.textContent = finalResults.agingResistance.toFixed(1);
-                if (qualityEls.elasticRecovery) qualityEls.elasticRecovery.textContent = finalResults.elasticRecovery.toFixed(1);
-                if (qualityEls.softeningPoint) qualityEls.softeningPoint.textContent = finalResults.softeningPoint.toFixed(1);
-                if (qualityEls.settingTime) qualityEls.settingTime.textContent = finalResults.settingTime.toFixed(0);
+                    // Update DOM elements
+                    Object.entries(qualityEls).forEach(([key, el]) => {
+                        if (el) {
+                            el.textContent = finalResults[key] ? finalResults[key].toFixed(key === 'settingTime' ? 0 : 1) : 'N/A';
+                        } else {
+                            console.warn(`Quality element "${key}" not found`);
+                        }
+                    });
 
-                // Update Chart
-                if (chart) {
-                    chart.data.datasets[0].data = [
-                        finalResults.adhesion,
-                        finalResults.durability,
-                        finalResults.flexibility,
-                        finalResults.tempResistance,
-                        finalResults.agingResistance,
-                        // Elastic Recovery is not a 'score out of 100' so we exclude it from the radar chart to maintain scale clarity
-                    ];
-                    chart.update();
+                    // Update Chart
+                    if (chart) {
+                        const chartData = [
+                            finalResults.adhesion,
+                            finalResults.durability,
+                            finalResults.flexibility,
+                            finalResults.tempResistance,
+                            finalResults.agingResistance,
+                        ];
+                        if (chartData.every(val => !isNaN(val))) {
+                            chart.data.datasets[0].data = chartData;
+                            chart.update();
+                        } else {
+                            console.error('Invalid chart data:', chartData);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Calculation error:', error);
+                    if (statusTextEl) statusTextEl.textContent = 'Calculation error';
+                    if (statusIconEl) statusIconEl.textContent = '⚠️';
                 }
             };
 
+            // Reset function
             const resetValues = () => {
-                Object.keys(defaults).forEach(key => {
-                    const el = inputs[key];
+                Object.entries(inputs).forEach(([key, el]) => {
                     if (!el) return;
                     if (el.type === 'checkbox') {
                         el.checked = defaults[key];
-                    } else if (el.tagName === 'SELECT') {
-                        el.value = defaults[key];
                     } else {
                         el.value = defaults[key];
+                        el.classList.remove('invalid-input');
                     }
                 });
                 updateCalculations();
             };
 
+            // Debounced update
+            let timeout;
+            const debounceUpdate = () => {
+                clearTimeout(timeout);
+                timeout = setTimeout(updateCalculations, 100);
+            };
+            
+            // Modal functions
+            const showModal = () => {
+                resetModal.classList.remove('hidden');
+            };
+
+            const hideModal = () => {
+                resetModal.classList.add('hidden');
+            };
+
             // Event Listeners
-            Object.values(inputs).forEach(input => {
+            Object.entries(inputs).forEach(([key, input]) => {
                 if (input) {
-                    input.addEventListener('input', updateCalculations);
+                    input.addEventListener('input', debounceUpdate);
+                } else {
+                    console.warn(`Input element "${key}" not found`);
                 }
             });
 
+            // Replaced the confirm() with a custom modal
             if (resetButton) {
-                resetButton.addEventListener('click', resetValues);
+                resetButton.addEventListener('click', showModal);
+            }
+
+            if (resetConfirmBtn) {
+                resetConfirmBtn.addEventListener('click', () => {
+                    resetValues();
+                    hideModal();
+                });
+            }
+
+            if (resetCancelBtn) {
+                resetCancelBtn.addEventListener('click', hideModal);
+            }
+
+            // Close modal on outside click
+            if (resetModal) {
+                resetModal.addEventListener('click', (e) => {
+                    if (e.target === resetModal) {
+                        hideModal();
+                    }
+                });
             }
 
             // Initialize on load
             resetValues();
-
         })();
     </script>
 </body>
 </html>
-```
