@@ -2,13 +2,11 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Advanced PMB Bitumen Mix Calculator</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- math.js library for matrix operations -->
-    <script src="https://cdn.jsdelivr.net/npm/mathjs@11.5.0/lib/browser/math.js"></script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -186,22 +184,23 @@ Batch,C170,SBS,HA32,X-Link,Temp,Digestion,Softening,Torsional,Viscosity
             </div>
         </div>
     </div>
-
 <script type="module">
+import { create, all } from 'https://cdn.jsdelivr.net/npm/mathjs@11.5.0/es6/math.js';
+const math = create(all);
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { getFirestore, collection, getDocs, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-// Provided by the platform
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : undefined;
+
 let db, auth, userId, labDataDocs = [], importedDataDocs = [];
 let chart;
 
-// Helper to get DOM elements safely
+// Element references
 const getEl = id => document.getElementById(id);
-// DOM references
 const inputs = {
     c170Bitumen: getEl('c170Bitumen'),
     sbs: getEl('sbs'),
@@ -218,11 +217,10 @@ const statusIconEl = getEl('statusIcon');
 const statusTextEl = getEl('statusText');
 const submitButton = getEl('submitButton');
 const resetButton = getEl('resetButton');
-// Modal references
 const resetModal = getEl('resetModal');
 const resetConfirmBtn = getEl('resetConfirmBtn');
 const resetCancelBtn = getEl('resetCancelBtn');
-// Quality spans
+
 const qualityEls = {
     adhesion: getEl('adhesion'),
     durability: getEl('durability'),
@@ -234,7 +232,6 @@ const qualityEls = {
     settingTime: getEl('settingTime'),
 };
 
-// Data Uploader references
 const dataUploaderContent = getEl('dataUploaderContent');
 const uploaderToggleIcon = getEl('uploaderToggleIcon');
 const dataInputArea = getEl('dataInputArea');
@@ -243,7 +240,7 @@ const dataLogEl = getEl('dataLog');
 const dataSummaryEl = getEl('dataSummary');
 const avgSofteningEl = getEl('avgSoftening');
 const avgTorsionalEl = getEl('avgTorsional');
-// Default values
+
 const defaults = {
     c170Bitumen: 70,
     sbs: 15,
@@ -254,29 +251,28 @@ const defaults = {
     carbonNanotubes: false,
     syntheticWax: false,
 };
-// Helpers
+
 const clampRound = (num, min = 0, max = 100, decimals = 2) => {
     const clamped = Math.min(Math.max(num, min), max);
     return Number(clamped.toFixed(decimals));
 };
+
 const getInputValue = el => {
     if (!el) return 0;
     if (el.type === 'checkbox') return el.checked;
     const val = el.value === '' || isNaN(el.value) ? 0 : Number(el.value);
     return val < 0 ? 0 : val;
 };
-// UI toggles
+
 window.toggleDataUploader = () => {
     const isHidden = dataUploaderContent.classList.toggle('hidden');
     uploaderToggleIcon.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(45deg)';
 };
 
-// --- Multivariate Linear Regression Functions Using Math.js ---
-
-// Build feature vector with interaction terms
+// Regression functions
 function buildFeatureVector(row) {
     return [
-        1, // intercept
+        1,
         row.c170Bitumen || 0,
         row.SBS || 0,
         row.HA32 || 0,
@@ -293,27 +289,30 @@ function buildFeatureVector(row) {
     ];
 }
 
-// Fit multivariate OLS regression
 function fitMultivariateOLS(data, targetKey) {
-    const X = data.map(d => buildFeatureVector(d));
-    const y = data.map(d => d[targetKey] || 0);
-    const Xmat = math.matrix(X);
-    const yvec = math.transpose(math.matrix([y]));
-    const Xt = math.transpose(Xmat);
-    const XtX = math.multiply(Xt, Xmat);
-    const XtX_inv = math.inv(XtX);
-    const XtY = math.multiply(Xt, yvec);
-    const coefMatrix = math.multiply(XtX_inv, XtY);
-    return coefMatrix._data.map(row => row[0]);
+    try {
+        const X = data.map(d => buildFeatureVector(d));
+        const y = data.map(d => d[targetKey] || 0);
+        const Xmat = math.matrix(X);
+        const yvec = math.transpose(math.matrix([y]));
+        const Xt = math.transpose(Xmat);
+        const XtX = math.multiply(Xt, Xmat);
+        const XtX_inv = math.inv(XtX);
+        const XtY = math.multiply(Xt, yvec);
+        const coefMatrix = math.multiply(XtX_inv, XtY);
+        return coefMatrix._data.map(row => row[0]);
+    } catch (err) {
+        console.error('Matrix inversion failed:', err);
+        return null;
+    }
 }
 
-// Predict target
 function predictTarget(row, coefficients) {
+    if (!coefficients) return null;
     const features = buildFeatureVector(row);
     return features.reduce((sum, val, i) => sum + val * coefficients[i], 0);
 }
 
-// Enhanced Prediction
 const enhancedPredict = (importedData, currentMix) => {
     if (importedData.length < 5) {
         console.warn("Not enough data for multivariate model, fallback to defaults.");
@@ -336,8 +335,16 @@ const enhancedPredict = (importedData, currentMix) => {
         const softeningCoeffs = fitMultivariateOLS(normData, 'Softening');
         const torsionalCoeffs = fitMultivariateOLS(normData, 'Torsional');
 
+        if (!softeningCoeffs || !torsionalCoeffs) {
+            console.warn("Regression fitting returned null coefficients.");
+            return null;
+        }
+
         const softeningPred = predictTarget(currentMix, softeningCoeffs);
         const torsionalPred = predictTarget(currentMix, torsionalCoeffs);
+
+        console.log('Predicted Softening Point:', softeningPred);
+        console.log('Predicted Torsional Recovery:', torsionalPred);
 
         return {
             softeningPoint: softeningPred,
@@ -349,7 +356,6 @@ const enhancedPredict = (importedData, currentMix) => {
     }
 };
 
-// Main calculation function
 const updateCalculations = (importedData = []) => {
     const tolerance = 0.5;
     try {
@@ -410,7 +416,7 @@ const updateCalculations = (importedData = []) => {
         const settingTime = 120 - (bitlinkerWeight * 50) + (hasWax ? 15 : 0) - (hasCNT ? 5 : 0);
 
         let softeningPoint, torsionalRecovery;
-        const importedDataObjects = importedData.map(doc => doc.data());
+        const importedDataObjects = importedDataDocs.map(doc => doc.data());
         const predictions = enhancedPredict(importedDataObjects, { 
             c170Bitumen: c170,
             SBS: sbs,
@@ -426,7 +432,6 @@ const updateCalculations = (importedData = []) => {
             softeningPoint = predictions.softeningPoint;
             torsionalRecovery = predictions.torsionalRecovery;
         } else {
-            // fallback to simpler formulas
             torsionalRecovery = 50 + (sbsWeight * 30) - (rapRasWeight * 10);
             softeningPoint = 60 + (sbsWeight * 25) + (bitlinkerWeight * 5) - (rapRasWeight * 5);
         }
@@ -439,4 +444,119 @@ const updateCalculations = (importedData = []) => {
             agingResistance: clampRound(finalQualities.agingResistance * 100, 40, 100, 1),
             torsionalRecovery: clampRound(torsionalRecovery, 30, 95, 1),
             softeningPoint: clampRound(softeningPoint, 55, 90, 1),
-            settingTime: clampRound
+            settingTime: clampRound(settingTime, 10, 180, 0),
+        };
+
+        Object.entries(qualityEls).forEach(([key, el]) => {
+            if (el) { el.textContent = (results[key] !== undefined) ? results[key].toFixed(key === 'settingTime' ? 0 : 1) : '--'; }
+        });
+
+        if (chart) {
+            const chartData = [ results.adhesion, results.durability, results.flexibility, results.tempResistance, results.agingResistance ];
+            if (chartData.every(val => !isNaN(val))) {
+                chart.data.datasets[0].data = chartData;
+                chart.update();
+            }
+        }
+    } catch (error) {
+        console.error('Calculation error:', error);
+        if (statusTextEl) statusTextEl.textContent = 'Calculation error';
+        if (statusIconEl) statusIconEl.textContent = '⚠️';
+    }
+};
+
+const resetValues = () => {
+    Object.entries(defaults).forEach(([key, value]) => {
+        const el = inputs[key];
+        if (el) {
+            if (el.type === 'checkbox') {
+                el.checked = value;
+            } else {
+                el.value = value;
+                el.classList.remove('invalid-input');
+            }
+        }
+    });
+    updateCalculations(importedDataDocs);
+};
+
+const showModal = () => resetModal.classList.remove('hidden');
+const hideModal = () => resetModal.classList.add('hidden');
+
+const initializeChart = () => {
+    const ctx = getEl('qualityChart').getContext('2d');
+    chart = new Chart(ctx, {
+        type: 'radar',
+        data: {
+            labels: ['Adhesion', 'Durability', 'Flexibility', 'Temp. Resistance', 'Aging Resistance'],
+            datasets: [{
+                label: 'Mix Quality',
+                data: [0, 0, 0, 0, 0],
+                backgroundColor: 'rgba(79, 70, 229, 0.2)',
+                borderColor: 'rgba(79, 70, 229, 1)',
+                borderWidth: 2,
+                pointBackgroundColor: 'rgba(79, 70, 229, 1)',
+                pointBorderColor: '#fff',
+                pointHoverBackgroundColor: '#fff',
+                pointHoverBorderColor: 'rgba(79, 70, 229, 1)'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            elements: { line: { tension: 0.1 } },
+            scales: {
+                r: {
+                    angleLines: { display: false },
+                    suggestedMin: 0,
+                    suggestedMax: 100,
+                    pointLabels: {
+                        font: { size: 14, family: 'Inter', weight: 'bold' },
+                        color: '#4b5563'
+                    },
+                    ticks: { display: false }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: (context) => `${context.dataset.label}: ${context.raw.toFixed(1)}%` } }
+            }
+        }
+    });
+};
+
+const uploadCsvData = async () => {
+    try {
+        loadDataButton.textContent = 'Uploading...';
+        loadDataButton.disabled = true;
+        const csvString = dataInputArea.value;
+        const lines = csvString.trim().split('\n');
+        if (lines.length < 2) {
+            throw new Error("CSV data must contain a header row and at least one data row.");
+        }
+        const headers = lines[0].split(',').map(header => header.trim());
+        const data = [];
+        for (let i = 1; i < lines.length; i++) {
+            const values = lines[i].split(',').map(val => val.trim());
+            if (values.length !== headers.length) {
+                console.warn(`Skipping row ${i+1} due to inconsistent number of columns.`);
+                continue;
+            }
+            const entry = {};
+            headers.forEach((header, index) => {
+                let value = values[index];
+                if (!isNaN(value) && value !== '') {
+                    value = Number(value);
+                } else if (value.toLowerCase() === 'true') {
+                    value = true;
+                } else if (value.toLowerCase() === 'false') {
+                    value = false;
+                }
+                entry[header] = value;
+            });
+            data.push(entry);
+        }
+        if (data.length === 0) {
+            throw new Error("No valid data rows found in the CSV.");
+        }
+        const importedDataRef = collection
