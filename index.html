@@ -36,6 +36,10 @@
         .invalid-input {
             border-color: #dc2626;
         }
+        #qualityChart {
+            width: 100% !important;
+            height: 320px !important;
+        }
     </style>
 </head>
 <body class="bg-slate-100 flex flex-col items-center justify-center p-6 min-h-screen">
@@ -97,8 +101,8 @@
             </div>
             <div class="space-y-8">
                 <h2 class="text-2xl font-bold text-gray-800 border-b pb-2">Mix Qualities</h2>
-                <div class="bg-gray-100 p-4 rounded-xl shadow-inner min-h-[300px] flex items-center justify-center">
-                    <canvas id="qualityChart" aria-label="Mix qualities radar chart" role="img"></canvas>
+                <div class="bg-gray-100 p-4 rounded-xl shadow-inner flex items-center justify-center" style="min-height: 320px;">
+                    <canvas id="qualityChart" aria-label="Mix qualities radar chart" role="img" style="width:100%; max-width: 600px;"></canvas>
                 </div>
                 <div class="bg-indigo-50 rounded-lg p-6">
                     <ul class="grid grid-cols-2 gap-4 text-indigo-900 font-medium text-lg" aria-live="polite">
@@ -114,4 +118,230 @@
                 </div>
             </div>
         </div>
-        <div class="text-center mb-6 font-bold flex flex-col sm:flex-row items-center justify-center gap-6 p-4 border-
+        
+        <div class="text-center mb-6 font-bold flex flex-col sm:flex-row items-center justify-center gap-6 p-4 border-t border-gray-200" aria-live="polite">
+            <span id="totalPercentage" class="text-xl text-gray-800">Total Bitumen Mix: --%</span>
+            <span id="remaining" class="text-xl flex items-center gap-2">
+                <span class="text-gray-500">Remaining: --%</span>
+                <span id="statusIcon" aria-hidden="true"></span>
+                <span class="sr-only" id="statusText"></span>
+            </span>
+            <button id="submitButton" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded-full transition-colors duration-300">
+                Process
+            </button>
+            <button id="resetButton" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-6 rounded-full transition-colors duration-300">
+                Reset to Default
+            </button>
+        </div>
+    </div>
+<script type="module">
+import { create, all } from 'https://cdn.jsdelivr.net/npm/mathjs@11.5.0/es6/math.js';
+const math = create(all);
+
+const getEl = id => document.getElementById(id);
+let chart;
+
+function buildFeatureVector(row) {
+    return [
+        1,
+        row.c170Bitumen || 0,
+        row.SBS || 0,
+        row.HA32 || 0,
+        row.Bitlinker || 0,
+        row.RAP || 0,
+        row.RAS || 0,
+        row.CNT ? 1 : 0,
+        row.Wax ? 1 : 0,
+        (row.SBS || 0) * (row.Bitlinker || 0),
+        (row.SBS || 0) * (row.RAP || 0),
+        (row.SBS || 0) * (row.RAS || 0),
+        (row.RAP || 0) * (row.RAS || 0),
+        (row.CNT ? 1 : 0) * (row.Wax ? 1 : 0)
+    ];
+}
+
+function fitMultivariateOLS(data, targetKey) {
+    try {
+        const X = data.map(d => buildFeatureVector(d));
+        const y = data.map(d => d[targetKey] || 0);
+        const Xmat = math.matrix(X);
+        const yvec = math.transpose(math.matrix([y]));
+        const Xt = math.transpose(Xmat);
+        const XtX = math.multiply(Xt, Xmat);
+        const XtX_inv = math.inv(XtX);
+        const XtY = math.multiply(Xt, yvec);
+        const coefMatrix = math.multiply(XtX_inv, XtY);
+        return coefMatrix._data.map(row => row[0]);
+    } catch (err) {
+        console.error('Matrix inversion failed:', err);
+        return null;
+    }
+}
+
+function predictTarget(row, coefficients) {
+    if (!coefficients) return null;
+    const features = buildFeatureVector(row);
+    return features.reduce((sum, val, i) => sum + val * coefficients[i], 0);
+}
+
+function clampRound(num, min = 0, max = 100, decimals = 2) {
+    const clamped = Math.min(Math.max(num, min), max);
+    return Number(clamped.toFixed(decimals));
+}
+
+function updateCalculations() {
+    const c170Bitumen = parseFloat(getEl('c170Bitumen').value) || 0;
+    const sbs = parseFloat(getEl('sbs').value) || 0;
+    const ha32 = parseFloat(getEl('ha32CombiningOil').value) || 0;
+    const bitlinker = parseFloat(getEl('bitlinker').value) || 0;
+    const rap = parseFloat(getEl('rap').value) || 0;
+    const ras = parseFloat(getEl('ras').value) || 0;
+    const carbonNanotubes = getEl('carbonNanotubes').checked ? 1 : 0;
+    const syntheticWax = getEl('syntheticWax').checked ? 1 : 0;
+
+    // Total and validation
+    const total = c170Bitumen + sbs + ha32 + bitlinker;
+    getEl('totalPercentage').textContent = `Total Bitumen Mix: ${total.toFixed(2)}%`;
+    const remaining = 100 - total;
+    getEl('remaining').querySelector('span').textContent = `Remaining: ${remaining.toFixed(2)}%`;
+    if (Math.abs(remaining) > 0.5) {
+        getEl('remaining').querySelector('span').classList.add('text-red-600');
+        getEl('statusIcon').textContent = '⚠️';
+        getEl('statusText').textContent = 'Main components must total 100%';
+    } else {
+        getEl('remaining').querySelector('span').classList.remove('text-red-600');
+        getEl('statusIcon').textContent = '✅';
+        getEl('statusText').textContent = 'Valid';
+    }
+
+    // Base qualities (simplified example data)
+    const baseQualities = { adhesion: 0.315, durability: 0.245, flexibility: 0.34, tempResistance: 0.21, agingResistance: 0.255 };
+    const sbsQualities = { adhesion: 0.9, durability: 0.95, flexibility: 1, tempResistance: 0.9, agingResistance: 0.95 };
+    const ha32Qualities = { adhesion: 0.7, durability: 0.6, flexibility: 0.8, tempResistance: 0.7, agingResistance: 0.6 };
+    const bitlinkerQualities = { adhesion: 0.8, durability: 0.8, flexibility: 0.8, tempResistance: 0.8, agingResistance: 0.8 };
+
+    let adhesion = (c170Bitumen * baseQualities.adhesion + sbs * sbsQualities.adhesion + ha32 * ha32Qualities.adhesion + bitlinker * bitlinkerQualities.adhesion) / 100;
+    let durability = (c170Bitumen * baseQualities.durability + sbs * sbsQualities.durability + ha32 * ha32Qualities.durability + bitlinker * bitlinkerQualities.durability) / 100;
+    let flexibility = (c170Bitumen * baseQualities.flexibility + sbs * sbsQualities.flexibility + ha32 * ha32Qualities.flexibility + bitlinker * bitlinkerQualities.flexibility) / 100;
+    let tempResistance = (c170Bitumen * baseQualities.tempResistance + sbs * sbsQualities.tempResistance + ha32 * ha32Qualities.tempResistance + bitlinker * bitlinkerQualities.tempResistance) / 100;
+    let agingResistance = (c170Bitumen * baseQualities.agingResistance + sbs * sbsQualities.agingResistance + ha32 * ha32Qualities.agingResistance + bitlinker * bitlinkerQualities.agingResistance) / 100;
+
+    // Additive effects
+    if (carbonNanotubes) {
+        adhesion += 0.05;
+        durability += 0.05;
+        flexibility += 0.02;
+    }
+    if (syntheticWax) {
+        flexibility -= 0.03;
+    }
+
+    // Clamp to 0-1 range
+    adhesion = Math.min(Math.max(adhesion, 0), 1);
+    durability = Math.min(Math.max(durability, 0), 1);
+    flexibility = Math.min(Math.max(flexibility, 0), 1);
+    tempResistance = Math.min(Math.max(tempResistance, 0), 1);
+    agingResistance = Math.min(Math.max(agingResistance, 0), 1);
+
+    // Convert to percentage
+    getEl('adhesion').textContent = (adhesion * 100).toFixed(1);
+    getEl('durability').textContent = (durability * 100).toFixed(1);
+    getEl('flexibility').textContent = (flexibility * 100).toFixed(1);
+    getEl('tempResistance').textContent = (tempResistance * 100).toFixed(1);
+    getEl('agingResistance').textContent = (agingResistance * 100).toFixed(1);
+
+    // Simplified calculation for torsional recovery and softening point
+    let torsionalRecovery = 50 + (sbs / 100 * 30) - ((rap + ras) / 100 * 10);
+    let softeningPoint = 60 + (sbs / 100 * 25) + (bitlinker / 100 * 5) - ((rap + ras) / 100 * 5);
+
+    getEl('torsionalRecovery').textContent = torsionalRecovery.toFixed(1);
+    getEl('softeningPoint').textContent = softeningPoint.toFixed(1);
+
+    // Example setting time calculation
+    let settingTime = 120 - (bitlinker / 100 * 50) + (syntheticWax ? 15 : 0) - (carbonNanotubes ? 5 : 0);
+    getEl('settingTime').textContent = Math.round(settingTime);
+
+    // Update chart data
+    const chartData = [
+        adhesion * 100,
+        durability * 100,
+        flexibility * 100,
+        tempResistance * 100,
+        agingResistance * 100
+    ];
+
+    if(chart && chartData.every(val => !isNaN(val))) {
+        chart.data.datasets[0].data = chartData;
+        chart.update();
+    }
+}
+
+function resetValues() {
+    getEl('c170Bitumen').value = 70;
+    getEl('sbs').value = 15;
+    getEl('ha32CombiningOil').value = 10;
+    getEl('bitlinker').value = 5;
+    getEl('rap').value = 0;
+    getEl('ras').value = 0;
+    getEl('carbonNanotubes').checked = false;
+    getEl('syntheticWax').checked = false;
+
+    updateCalculations();
+}
+
+function initializeChart() {
+    const ctx = getEl('qualityChart').getContext('2d');
+    chart = new Chart(ctx, {
+        type: 'radar',
+        data: {
+            labels: ['Adhesion', 'Durability', 'Flexibility', 'Temp. Resistance', 'Aging Resistance'],
+            datasets: [{
+                label: 'Mix Quality',
+                data: [0, 0, 0, 0, 0],
+                backgroundColor: 'rgba(79, 70, 229, 0.2)',
+                borderColor: 'rgba(79, 70, 229, 1)',
+                borderWidth: 2,
+                pointBackgroundColor: 'rgba(79, 70, 229, 1)',
+                pointBorderColor: '#fff',
+                pointHoverBackgroundColor: '#fff',
+                pointHoverBorderColor: 'rgba(79, 70, 229, 1)'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                r: {
+                    angleLines: { display: false },
+                    suggestedMin: 0,
+                    suggestedMax: 100,
+                    pointLabels: {
+                        font: { size: 14, family: 'Inter', weight: 'bold' },
+                        color: '#4b5563'
+                    },
+                    ticks: { display: false }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => ctx.dataset.label + ': ' + ctx.raw.toFixed(1) + '%'
+                    }
+                }
+            }
+        }
+    });
+}
+
+window.onload = () => {
+    initializeChart();
+    resetValues();
+
+    getEl('submitButton').addEventListener('click', updateCalculations);
+    getEl('resetButton').addEventListener('click', resetValues);
+};
+</script>
+</body>
+</html>
+
