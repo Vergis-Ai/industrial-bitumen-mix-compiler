@@ -517,11 +517,9 @@
             };
 
             // Event Listeners
-            Object.entries(inputs).forEach(([key, input]) => {
+            Object.values(inputs).forEach(input => {
                 if (input) {
                     input.addEventListener('input', debounceUpdate);
-                } else {
-                    console.warn(`Input element "${key}" not found`);
                 }
             });
 
