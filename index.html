@@ -51,22 +51,22 @@
                     <div class="grid grid-cols-2 gap-4">
                         <div class="flex flex-col gap-1">
                             <label for="c170Bitumen" class="text-sm font-medium text-gray-500">C170 Bitumen (%)</label>
-                            <input type="number" id="c170Bitumen" min="0" max="100" step="0.01" value="70"
+                            <input type="number" id="c170Bitumen" min="0" max="100" step="0.01" value="92.1"
                                 class="p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors" />
                         </div>
                         <div class="flex flex-col gap-1">
                             <label for="sbs" class="text-sm font-medium text-gray-500">LG411 Radial (SBS) (%)</label>
-                            <input type="number" id="sbs" min="0" max="100" step="0.01" value="15"
+                            <input type="number" id="sbs" min="0" max="100" step="0.01" value="5.3"
                                 class="p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors" />
                         </div>
                         <div class="flex flex-col gap-1">
                             <label for="ha32CombiningOil" class="text-sm font-medium text-gray-500">Ha32 Combining Oil (%)</label>
-                            <input type="number" id="ha32CombiningOil" min="0" max="100" step="0.01" value="10"
+                            <input type="number" id="ha32CombiningOil" min="0" max="100" step="0.01" value="2.5"
                                 class="p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors" />
                         </div>
                         <div class="flex flex-col gap-1">
                             <label for="bitlinker" class="text-sm font-medium text-gray-500">Ravasol™ BITLINKER-S6F (%)</label>
-                            <input type="number" id="bitlinker" min="0" max="100" step="0.01" value="5"
+                            <input type="number" id="bitlinker" min="0" max="100" step="0.01" value="0.1"
                                 class="p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors" />
                         </div>
                     </div>
@@ -92,6 +92,16 @@
                             <input type="number" id="ras" min="0" max="100" step="0.01" value="0"
                                 class="p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors" />
                         </div>
+                        <div class="flex flex-col gap-1">
+                            <label for="temperature" class="text-sm font-medium text-gray-500">Mixing Temperature (°C)</label>
+                            <input type="number" id="temperature" min="100" max="200" step="1" value="190"
+                                class="p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors" />
+                        </div>
+                        <div class="flex flex-col gap-1">
+                            <label for="digestionTime" class="text-sm font-medium text-gray-500">Digestion Time (hours)</label>
+                            <input type="number" id="digestionTime" min="0" max="24" step="0.1" value="8"
+                                class="p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors" />
+                        </div>
                     </div>
                 </div>
             </div>
@@ -102,14 +112,15 @@
                 </div>
                 <div class="bg-indigo-50 rounded-lg p-6">
                     <ul class="grid grid-cols-2 gap-4 text-indigo-900 font-medium text-lg" aria-live="polite">
-                        <li>Adhesion: <span id="adhesion" class="font-bold">--</span>%</li>
-                        <li>Durability: <span id="durability" class="font-bold">--</span>%</li>
-                        <li>Flexibility: <span id="flexibility" class="font-bold">--</span>%</li>
-                        <li>Temp Resistance: <span id="tempResistance" class="font-bold">--</span>%</li>
-                        <li>Aging Resistance: <span id="agingResistance" class="font-bold">--</span>%</li>
-                        <li class="col-span-2">Torsional Recovery: <span id="torsionalRecovery" class="font-bold">--</span>%</li>
+                        <li>Adhesion: <span id="adhesion" class="font-bold">--</span></li>
+                        <li>Durability: <span id="durability" class="font-bold">--</span></li>
+                        <li>Flexibility: <span id="flexibility" class="font-bold">--</span></li>
+                        <li>Temp Resistance: <span id="tempResistance" class="font-bold">--</span></li>
+                        <li>Aging Resistance: <span id="agingResistance" class="font-bold">--</span></li>
+                        <li>Viscosity: <span id="viscosity" class="font-bold">--</span> Pa·s</li>
+                        <li class="col-span-2">Torsional Recovery: <span id="torsionalRecovery" class="font-bold">--</span></li>
                         <li class="col-span-2">Softening Point: <span id="softeningPoint" class="font-bold">--</span> °C</li>
-                        <li class="col-span-2">Setting Time: <span id="settingTime" class="font-bold">--</span> mins</li>
+                        <li class="col-span-2">Setting Time: <span id="settingTime" class="font-bold">--</span> min</li>
                     </ul>
                 </div>
             </div>
@@ -131,19 +142,27 @@
     </div>
     
     <script type="module">
-        import { create, all } from 'https://cdn.jsdelivr.net/npm/mathjs@11.5.0/es6/math.js';
+        import { create, all } from 'https://cdn.jsdelivr.net/npm/mathjs@11.5.0/+esm';
         const math = create(all);
 
-        // Your Firebase imports and variable declarations here
+        // Firebase imports
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, getDocs, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : undefined;
 
-        let db, auth, userId, labDataDocs = [], importedDataDocs = [];
+        let db, auth, userId, labDataDocs = [
+            { data: () => ({ c170Bitumen: 92.1, SBS: 5.3, HA32: 2.5, Bitlinker: 0.1, RAP: 0, RAS: 0, CNT: 0, Wax: 0, Temperature: 190, DigestionTime: 8, softeningPoint: 89.5, torsionalRecovery: 67, viscosity: 0.71 }) },
+            { data: () => ({ c170Bitumen: 92.15, SBS: 5.25, HA32: 2.5, Bitlinker: 0.1, RAP: 0, RAS: 0, CNT: 0, Wax: 0, Temperature: 190, DigestionTime: 8, softeningPoint: 89.2, torsionalRecovery: 67, viscosity: 0.76 }) },
+            { data: () => ({ c170Bitumen: 91.9, SBS: 5.4, HA32: 2.6, Bitlinker: 0.1, RAP: 0, RAS: 0, CNT: 0, Wax: 0, Temperature: 190, DigestionTime: 8, softeningPoint: 89.2, torsionalRecovery: 64, viscosity: 0.79 }) },
+            { data: () => ({ c170Bitumen: 92.4, SBS: 5.2, HA32: 2.3, Bitlinker: 0.1, RAP: 0, RAS: 0, CNT: 0, Wax: 0, Temperature: 190, DigestionTime: 8, softeningPoint: 95.2, torsionalRecovery: 59, viscosity: 0.79 }) },
+            { data: () => ({ c170Bitumen: 94.8, SBS: 5.2, HA32: 0, Bitlinker: 0, RAP: 0, RAS: 0, CNT: 0, Wax: 0, Temperature: 190, DigestionTime: 8, softeningPoint: 91.4, torsionalRecovery: 60, viscosity: 0.69 }) },
+            { data: () => ({ c170Bitumen: 92, SBS: 5.3, HA32: 2.6, Bitlinker: 0.1, RAP: 0, RAS: 0, CNT: 0, Wax: 0, Temperature: 190, DigestionTime: 8, softeningPoint: 102.4, torsionalRecovery: 69, viscosity: 0.73 }) },
+            { data: () => ({ c170Bitumen: 92, SBS: 5.3, HA32: 2.6, Bitlinker: 0.1, RAP: 0, RAS: 0, CNT: 0, Wax: 0, Temperature: 190, DigestionTime: 8, softeningPoint: 86.0, torsionalRecovery: 62, viscosity: 0.80 }) },
+            { data: () => ({ c170Bitumen: 92.3, SBS: 5.2, HA32: 2.4, Bitlinker: 0.1, RAP: 0, RAS: 0, CNT: 0, Wax: 0, Temperature: 190, DigestionTime: 8, softeningPoint: 101.8, torsionalRecovery: 66, viscosity: 0.79 }) }
+        ];
         let chart;
 
         // DOM element references
@@ -155,7 +174,9 @@
             rap: document.getElementById('rap'),
             ras: document.getElementById('ras'),
             carbonNanotubes: document.getElementById('carbonNanotubes'),
-            syntheticWax: document.getElementById('syntheticWax')
+            syntheticWax: document.getElementById('syntheticWax'),
+            temperature: document.getElementById('temperature'),
+            digestionTime: document.getElementById('digestionTime')
         };
 
         const qualityEls = {
@@ -166,6 +187,7 @@
             agingResistance: document.getElementById('agingResistance'),
             torsionalRecovery: document.getElementById('torsionalRecovery'),
             softeningPoint: document.getElementById('softeningPoint'),
+            viscosity: document.getElementById('viscosity'),
             settingTime: document.getElementById('settingTime')
         };
         const submitButton = document.getElementById('submitButton');
@@ -200,12 +222,14 @@
                 dataPoint.RAP,
                 dataPoint.RAS,
                 dataPoint.CNT,
-                dataPoint.Wax
+                dataPoint.Wax,
+                dataPoint.Temperature,
+                dataPoint.DigestionTime
             ];
         };
 
         const fitMultivariateOLS = (data, targetKey) => {
-            if (data.length < 9) return null;
+            if (data.length < 8) return null; // Lowered threshold to 8
             try {
                 const features = data.map(buildFeatureVector);
                 const target = data.map(d => d[targetKey]);
@@ -233,26 +257,28 @@
             return prediction;
         };
 
-        const enhancedPredict = (importedData, currentMix) => {
-            const dataToUse = labDataDocs.concat(importedData);
-            if (dataToUse.length < 9) {
+        const enhancedPredict = (labData, currentMix) => {
+            const dataToUse = labData.map(doc => doc.data ? doc.data() : doc);
+            if (dataToUse.length < 8) {
                 console.log('Not enough data for enhanced prediction. Using fallback model.');
                 return null;
             }
             const spCoeffs = fitMultivariateOLS(dataToUse, 'softeningPoint');
             const trCoeffs = fitMultivariateOLS(dataToUse, 'torsionalRecovery');
+            const visCoeffs = fitMultivariateOLS(dataToUse, 'viscosity');
 
-            if (spCoeffs && trCoeffs) {
+            if (spCoeffs && trCoeffs && visCoeffs) {
                 const currentVector = buildFeatureVector(currentMix);
                 const softeningPoint = predictTarget(spCoeffs, currentVector);
                 const torsionalRecovery = predictTarget(trCoeffs, currentVector);
-                return { softeningPoint, torsionalRecovery };
+                const viscosity = predictTarget(visCoeffs, currentVector);
+                return { softeningPoint, torsionalRecovery, viscosity };
             }
             return null;
         };
-        
+
         // Main calculation logic
-        const updateCalculations = (importedData = []) => {
+        const updateCalculations = () => {
             const tolerance = 0.5;
             try {
                 const componentInputs = [inputs.c170Bitumen, inputs.sbs, inputs.ha32CombiningOil, inputs.bitlinker];
@@ -267,6 +293,8 @@
                 const ras = getInputValue(inputs.ras);
                 const hasCNT = getInputValue(inputs.carbonNanotubes);
                 const hasWax = getInputValue(inputs.syntheticWax);
+                const temperature = getInputValue(inputs.temperature);
+                const digestionTime = getInputValue(inputs.digestionTime);
                 const totalComponents = clampRound(c170 + sbs + ha32 + bitlinker, 0, 100, 2);
                 const remaining = clampRound(100 - totalComponents, -100, 100, 2);
                 const isValid = Math.abs(totalComponents - 100) < tolerance;
@@ -287,7 +315,7 @@
 
                 if (!isValid) {
                     if (chart) {
-                        chart.data.datasets[0].data = [0, 0, 0, 0, 0];
+                        chart.data.datasets[0].data = [0, 0, 0, 0, 0, 0];
                         chart.update();
                     }
                     Object.values(qualityEls).forEach(el => { if (el) el.textContent = '--'; });
@@ -296,21 +324,22 @@
 
                 // Base qualities and additive calculations
                 const mixQualities = {
-                    adhesion: (c170 * 0.70 + sbs * 0.95 + ha32 * 0.80 + bitlinker * 0.90) / 100,
-                    durability: (c170 * 0.85 + sbs * 0.90 + ha32 * 0.75 + bitlinker * 0.85) / 100,
-                    flexibility: (c170 * 0.60 + sbs * 0.98 + ha32 * 0.70 + bitlinker * 0.92) / 100,
-                    tempResistance: (c170 * 0.65 + sbs * 0.90 + ha32 * 0.70 + bitlinker * 0.88) / 100,
-                    agingResistance: (c170 * 0.80 + sbs * 0.95 + ha32 * 0.75 + bitlinker * 0.90) / 100
+                    adhesion: (c170 * 0.70 + sbs * 0.95 + ha32 * 0.80 + bitlinker * 0.90),
+                    durability: (c170 * 0.85 + sbs * 0.90 + ha32 * 0.75 + bitlinker * 0.85),
+                    flexibility: (c170 * 0.60 + sbs * 0.98 + ha32 * 0.70 + bitlinker * 0.92),
+                    tempResistance: (c170 * 0.65 + sbs * 0.90 + ha32 * 0.70 + bitlinker * 0.88),
+                    agingResistance: (c170 * 0.80 + sbs * 0.95 + ha32 * 0.75 + bitlinker * 0.90),
+                    viscosity: (c170 * 0.68 + sbs * 0.85 + ha32 * 0.78 + bitlinker * 0.85) // Scaled to 0-100 for radar chart
                 };
-                
+
+                // Normalize qualities to percentage
                 const totalMix = c170 + sbs + ha32 + bitlinker;
                 const normalizedQualities = Object.fromEntries(
                     Object.entries(mixQualities).map(([key, value]) => [key, (value / totalMix) * 100])
                 );
 
                 // Predict with enhanced model or fallback
-                const importedDataObjects = importedData.map(doc => doc.data());
-                const predictions = enhancedPredict(importedDataObjects, { 
+                const predictions = enhancedPredict(labDataDocs, { 
                     c170Bitumen: c170,
                     SBS: sbs,
                     HA32: ha32,
@@ -318,16 +347,20 @@
                     RAP: rap,
                     RAS: ras,
                     CNT: hasCNT,
-                    Wax: hasWax
+                    Wax: hasWax,
+                    Temperature: temperature,
+                    DigestionTime: digestionTime
                 });
 
-                let softeningPoint, torsionalRecovery;
+                let softeningPoint, torsionalRecovery, viscosity;
                 if (predictions) {
                     softeningPoint = predictions.softeningPoint;
                     torsionalRecovery = predictions.torsionalRecovery;
+                    viscosity = predictions.viscosity;
                 } else {
-                    softeningPoint = 55 + (sbs * 0.5) + (bitlinker * 0.3) - (ha32 * 0.1) + (hasCNT ? 3 : 0) - (rap * 0.05);
-                    torsionalRecovery = 25 + (sbs * 0.8) + (bitlinker * 0.5) - (ha32 * 0.2) + (hasWax ? 5 : 0) - (ras * 0.08);
+                    softeningPoint = 60 + (sbs * 1.5) + (bitlinker * 0.3) - (ha32 * 0.1) + (hasCNT ? 3 : 0) - (rap * 0.05) + (temperature - 180) * 0.2 + digestionTime * 3;
+                    torsionalRecovery = 35 + (sbs * 1.2) + (bitlinker * 0.5) - (ha32 * 0.2) + (hasWax ? 5 : 0) - (ras * 0.08) + digestionTime * 4;
+                    viscosity = 0.65 + (sbs * 0.03) - (ha32 * 0.01) + (bitlinker * 0.01) + (temperature - 180) * 0.002 + digestionTime * 0.005;
                 }
 
                 // Apply RAP/RAS effects to other qualities
@@ -336,12 +369,14 @@
                     normalizedQualities.durability *= (1 - rap / 100 * 0.10);
                     normalizedQualities.flexibility *= (1 - rap / 100 * 0.20);
                     normalizedQualities.agingResistance *= (1 - rap / 100 * 0.10);
+                    normalizedQualities.viscosity *= (1 - rap / 100 * 0.05);
                 }
                 if (ras > 0) {
                     normalizedQualities.adhesion *= (1 - ras / 100 * 0.20);
                     normalizedQualities.durability *= (1 - ras / 100 * 0.15);
                     normalizedQualities.flexibility *= (1 - ras / 100 * 0.25);
                     normalizedQualities.agingResistance *= (1 - ras / 100 * 0.15);
+                    normalizedQualities.viscosity *= (1 - ras / 100 * 0.05);
                 }
 
                 // Apply additive effects
@@ -349,12 +384,14 @@
                     normalizedQualities.adhesion += 5;
                     normalizedQualities.durability += 5;
                     normalizedQualities.tempResistance += 10;
+                    normalizedQualities.viscosity += 3;
                 }
                 if (hasWax) {
                     normalizedQualities.flexibility += 5;
                     normalizedQualities.tempResistance += 8;
+                    normalizedQualities.viscosity += 2;
                 }
-                
+
                 // Set the default setting time
                 const settingTime = 30 + (sbs * 0.5) - (bitlinker * 0.2) + (hasCNT ? -5 : 0) + (hasWax ? 5 : 0);
 
@@ -362,18 +399,20 @@
                 const finalQualities = Object.fromEntries(
                     Object.entries(normalizedQualities).map(([key, value]) => [key, clampRound(value, 0, 100, 2)])
                 );
-                softeningPoint = clampRound(softeningPoint, 40, 90, 2);
+                softeningPoint = clampRound(softeningPoint, 40, 110, 2);
                 torsionalRecovery = clampRound(torsionalRecovery, 0, 100, 2);
-                
+                viscosity = clampRound(viscosity, 0, 2, 2);
+
                 // Update the DOM with calculated values
-                if (qualityEls.adhesion) qualityEls.adhesion.textContent = `${finalQualities.adhesion.toFixed(2)}%`;
-                if (qualityEls.durability) qualityEls.durability.textContent = `${finalQualities.durability.toFixed(2)}%`;
-                if (qualityEls.flexibility) qualityEls.flexibility.textContent = `${finalQualities.flexibility.toFixed(2)}%`;
-                if (qualityEls.tempResistance) qualityEls.tempResistance.textContent = `${finalQualities.tempResistance.toFixed(2)}%`;
-                if (qualityEls.agingResistance) qualityEls.agingResistance.textContent = `${finalQualities.agingResistance.toFixed(2)}%`;
-                if (qualityEls.torsionalRecovery) qualityEls.torsionalRecovery.textContent = `${torsionalRecovery.toFixed(2)}%`;
-                if (qualityEls.softeningPoint) qualityEls.softeningPoint.textContent = `${softeningPoint.toFixed(2)} °C`;
-                if (qualityEls.settingTime) qualityEls.settingTime.textContent = `${settingTime.toFixed(2)} mins`;
+                if (qualityEls.adhesion) qualityEls.adhesion.textContent = `${finalQualities.adhesion.toFixed(2)}`;
+                if (qualityEls.durability) qualityEls.durability.textContent = `${finalQualities.durability.toFixed(2)}`;
+                if (qualityEls.flexibility) qualityEls.flexibility.textContent = `${finalQualities.flexibility.toFixed(2)}`;
+                if (qualityEls.tempResistance) qualityEls.tempResistance.textContent = `${finalQualities.tempResistance.toFixed(2)}`;
+                if (qualityEls.agingResistance) qualityEls.agingResistance.textContent = `${finalQualities.agingResistance.toFixed(2)}`;
+                if (qualityEls.torsionalRecovery) qualityEls.torsionalRecovery.textContent = `${torsionalRecovery.toFixed(2)}`;
+                if (qualityEls.softeningPoint) qualityEls.softeningPoint.textContent = `${softeningPoint.toFixed(2)}`;
+                if (qualityEls.viscosity) qualityEls.viscosity.textContent = `${viscosity.toFixed(2)}`;
+                if (qualityEls.settingTime) qualityEls.settingTime.textContent = `${settingTime.toFixed(2)}`;
 
                 // Update the radar chart
                 if (chart) {
@@ -382,76 +421,85 @@
                         finalQualities.durability,
                         finalQualities.flexibility,
                         finalQualities.tempResistance,
-                        finalQualities.agingResistance
+                        finalQualities.agingResistance,
+                        finalQualities.viscosity
                     ];
                     chart.update();
                 }
 
             } catch (error) {
                 console.error('Calculation failed:', error);
-                // Reset all displayed values on error
                 Object.values(qualityEls).forEach(el => { if (el) el.textContent = '--'; });
                 if (chart) {
-                    chart.data.datasets[0].data = [0, 0, 0, 0, 0];
+                    chart.data.datasets[0].data = [0, 0, 0, 0, 0, 0];
                     chart.update();
                 }
             }
         };
 
         // Event listeners and initial setup
-        submitButton.addEventListener('click', () => updateCalculations(importedDataDocs));
+        submitButton.addEventListener('click', () => updateCalculations());
         resetButton.addEventListener('click', () => {
-            inputs.c170Bitumen.value = 70;
-            inputs.sbs.value = 15;
-            inputs.ha32CombiningOil.value = 10;
-            inputs.bitlinker.value = 5;
+            inputs.c170Bitumen.value = 92.1;
+            inputs.sbs.value = 5.3;
+            inputs.ha32CombiningOil.value = 2.5;
+            inputs.bitlinker.value = 0.1;
             inputs.rap.value = 0;
             inputs.ras.value = 0;
             inputs.carbonNanotubes.checked = false;
             inputs.syntheticWax.checked = false;
+            inputs.temperature.value = 190;
+            inputs.digestionTime.value = 8;
             updateCalculations();
         });
 
         // Initialize Firebase and Auth State Listener
-        const app = initializeApp(firebaseConfig);
-        auth = getAuth(app);
-        db = getFirestore(app);
+        try {
+            const app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
 
-        onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                userId = user.uid;
-                await fetchLabData();
-            } else {
-                signInAnonymously(auth).then(async (userCredential) => {
-                    userId = userCredential.user.uid;
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    userId = user.uid;
                     await fetchLabData();
-                }).catch(error => {
-                    console.error("Error signing in anonymously:", error);
-                });
-            }
-        });
+                } else {
+                    signInAnonymously(auth).then(async (userCredential) => {
+                        userId = userCredential.user.uid;
+                        await fetchLabData();
+                    }).catch(error => {
+                        console.error("Error signing in anonymously:", error);
+                        updateCalculations(); // Fallback if auth fails
+                    });
+                }
+            });
+        } catch (error) {
+            console.error('Firebase initialization failed:', error);
+            updateCalculations(); // Proceed with fallback
+        }
 
         // Fetch lab data from Firestore
         const fetchLabData = async () => {
+            if (!db) return;
             const labDataRef = collection(db, 'lab-data');
             try {
                 const querySnapshot = await getDocs(labDataRef);
-                labDataDocs = querySnapshot.docs.map(doc => doc);
+                labDataDocs = querySnapshot.docs.length > 0 ? querySnapshot.docs : labDataDocs;
                 updateCalculations();
             } catch (error) {
                 console.error('Error fetching lab data:', error);
-                updateCalculations(); // Run calculations even if fetch fails
+                updateCalculations(); // Run calculations with hardcoded data
             }
         };
 
         // Initialize the radar chart
         const ctx = document.getElementById('qualityChart').getContext('2d');
-        const labels = ['Adhesion', 'Durability', 'Flexibility', 'Temp Resistance', 'Aging Resistance'];
+        const labels = ['Adhesion', 'Durability', 'Flexibility', 'Temp Resistance', 'Aging Resistance', 'Viscosity'];
         const data = {
             labels: labels,
             datasets: [{
                 label: 'Current Mix Quality',
-                data: [0, 0, 0, 0, 0],
+                data: [0, 0, 0, 0, 0, 0],
                 fill: true,
                 backgroundColor: 'rgba(99, 102, 241, 0.4)',
                 borderColor: 'rgb(99, 102, 241)',
@@ -503,7 +551,7 @@
                                     label += ': ';
                                 }
                                 if (context.parsed.r !== null) {
-                                    label += context.parsed.r.toFixed(2) + '%';
+                                    label += context.parsed.r.toFixed(2);
                                 }
                                 return label;
                             }
@@ -512,7 +560,9 @@
                 }
             }
         });
-        
+
+        // Run initial calculations
+        updateCalculations();
     </script>
 </body>
 </html>
