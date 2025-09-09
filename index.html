@@ -42,7 +42,7 @@
     <div class="container bg-white rounded-3xl shadow-xl p-8 max-w-lg w-full md:max-w-3xl lg:max-w-4xl">
         <h1 class="text-3xl font-bold text-center text-gray-800 mb-4 md:text-4xl">Advanced PMB Bitumen Mix Calculator</h1>
         <p class="text-center text-gray-500 mb-8 max-w-md mx-auto">
-            Enter the mix details to see updated mix qualities in real time. The total percentage for main components and SARA composition must each be 100%.
+            Enter the mix details and click **Process** to see updated mix qualities. The total percentage for main components must be 100%.
         </p>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
@@ -96,32 +96,6 @@
                         </div>
                     </div>
                 </div>
-
-                <div class="space-y-4">
-                    <h2 class="text-xl font-semibold mb-4 text-gray-700 border-b pb-2">SARA Composition (Total must be 100%)</h2>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="flex flex-col gap-1">
-                            <label for="saturates" class="text-sm font-medium text-gray-500">Saturates (%)</label>
-                            <input type="number" id="saturates" min="0" max="100" step="0.01" value="10"
-                                class="p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors" />
-                        </div>
-                        <div class="flex flex-col gap-1">
-                            <label for="aromatics" class="text-sm font-medium text-gray-500">Aromatics (%)</label>
-                            <input type="number" id="aromatics" min="0" max="100" step="0.01" value="50"
-                                class="p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors" />
-                        </div>
-                        <div class="flex flex-col gap-1">
-                            <label for="resins" class="text-sm font-medium text-gray-500">Resins (%)</label>
-                            <input type="number" id="resins" min="0" max="100" step="0.01" value="25"
-                                class="p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors" />
-                        </div>
-                        <div class="flex flex-col gap-1">
-                            <label for="asphaltenes" class="text-sm font-medium text-gray-500">Asphaltenes (%)</label>
-                            <input type="number" id="asphaltenes" min="0" max="100" step="0.01" value="15"
-                                class="p-2 rounded-lg border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors" />
-                        </div>
-                    </div>
-                </div>
             </div>
 
             <div class="space-y-8">
@@ -153,6 +127,9 @@
                 <span id="statusIcon" aria-hidden="true"></span>
                 <span class="sr-only" id="statusText"></span>
             </span>
+            <button id="submitButton" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded-full transition-colors duration-300">
+                Process
+            </button>
             <button id="resetButton" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-6 rounded-full transition-colors duration-300">
                 Reset to Default
             </button>
@@ -178,11 +155,7 @@
     <script>
         (() => {
             // Helper to get DOM elements safely
-            const getEl = id => {
-                const el = document.getElementById(id);
-                if (!el) console.warn(`Element with ID "${id}" not found`);
-                return el;
-            };
+            const getEl = id => document.getElementById(id);
 
             // DOM references
             const inputs = {
@@ -194,16 +167,13 @@
                 ras: getEl('ras'),
                 carbonNanotubes: getEl('carbonNanotubes'),
                 syntheticWax: getEl('syntheticWax'),
-                saturates: getEl('saturates'),
-                aromatics: getEl('aromatics'),
-                resins: getEl('resins'),
-                asphaltenes: getEl('asphaltenes'),
             };
 
             const totalPercentageEl = getEl('totalPercentage');
             const remainingEl = getEl('remaining');
             const statusIconEl = getEl('statusIcon');
             const statusTextEl = getEl('statusText');
+            const submitButton = getEl('submitButton');
             const resetButton = getEl('resetButton');
 
             // Modal references
@@ -223,6 +193,9 @@
                 settingTime: getEl('settingTime'),
             };
 
+            // Variable to hold the Chart.js instance
+            let chart;
+
             // Default values
             const defaults = {
                 c170Bitumen: 70,
@@ -233,81 +206,7 @@
                 ras: 0,
                 carbonNanotubes: false,
                 syntheticWax: false,
-                saturates: 10,
-                aromatics: 50,
-                resins: 25,
-                asphaltenes: 15,
             };
-
-            // Polymer effect multipliers (base scores, scaled later)
-            const pEffect = {
-                adhesion: 0.8,
-                durability: 0.75,
-                flexibility: 0.85,
-                tempResistance: 0.7,
-                agingResistance: 0.8,
-                elasticRecovery: 50,
-                softeningPoint: 50
-            };
-
-            // Additives effect boosts (multipliers)
-            const additiveEffects = {
-                carbonNanotubes: { adhesion: 1.05, durability: 1.10, flexibility: 1.03, tempResistance: 1.07, agingResistance: 1.10 },
-                syntheticWax: { adhesion: 1.02, durability: 1.05, flexibility: 1.04, tempResistance: 1.03, agingResistance: 1.02 },
-            };
-
-            // Chart setup
-            let chart = null;
-            const ctxEl = getEl('qualityChart');
-            if (ctxEl && ctxEl.getContext) {
-                const ctx = ctxEl.getContext('2d');
-                if (ctx) {
-                    chart = new Chart(ctx, {
-                        type: 'radar',
-                        data: {
-                            labels: ['Adhesion', 'Durability', 'Flexibility', 'Temp Resistance', 'Aging Resistance'],
-                            datasets: [{
-                                label: 'Mix Qualities (Score out of 100)',
-                                data: [0, 0, 0, 0, 0],
-                                fill: true,
-                                backgroundColor: 'rgba(99,102,241,0.2)',
-                                borderColor: 'rgba(99,102,241,1)',
-                                pointBackgroundColor: 'rgba(99,102,241,1)',
-                                pointBorderColor: '#fff',
-                                pointHoverBackgroundColor: '#fff',
-                                pointHoverBorderColor: 'rgba(99,102,241,1)',
-                                borderWidth: 2
-                            }]
-                        },
-                        options: {
-                            elements: { line: { tension: 0 } },
-                            scales: {
-                                r: {
-                                    beginAtZero: true,
-                                    max: 100,
-                                    pointLabels: { font: { size: 14 } },
-                                    grid: { color: 'rgba(200, 200, 200, 0.2)' },
-                                    ticks: { stepSize: 20, callback: v => v + '%' }
-                                }
-                            },
-                            plugins: {
-                                legend: { display: false },
-                                tooltip: {
-                                    callbacks: {
-                                        label: ctx => `${ctx.label}: ${ctx.parsed.r.toFixed(1)}%`
-                                    }
-                                }
-                            },
-                            responsive: true,
-                            maintainAspectRatio: false
-                        }
-                    });
-                } else {
-                    console.error('Canvas context not available');
-                }
-            } else {
-                console.error('Canvas element not found');
-            }
 
             // Helpers
             const clampRound = (num, min = 0, max = 100, decimals = 2) => {
@@ -323,16 +222,13 @@
 
             // Main calculation function
             const updateCalculations = () => {
+                const tolerance = 0.5; // Acceptable deviation for totals
                 try {
                     const componentInputs = [inputs.c170Bitumen, inputs.sbs, inputs.ha32CombiningOil, inputs.bitlinker];
-                    const saraInputs = [inputs.saturates, inputs.aromatics, inputs.resins, inputs.asphaltenes];
-
-                    // Reset invalid input styles
-                    [...componentInputs, ...saraInputs].forEach(input => {
+                    componentInputs.forEach(input => {
                         if (input && input.type === 'number') input.classList.remove('invalid-input');
                     });
 
-                    // Get input values
                     const c170 = getInputValue(inputs.c170Bitumen);
                     const sbs = getInputValue(inputs.sbs);
                     const ha32 = getInputValue(inputs.ha32CombiningOil);
@@ -341,114 +237,91 @@
                     const ras = getInputValue(inputs.ras);
                     const hasCNT = getInputValue(inputs.carbonNanotubes);
                     const hasWax = getInputValue(inputs.syntheticWax);
-                    const saturates = getInputValue(inputs.saturates);
-                    const aromatics = getInputValue(inputs.aromatics);
-                    const resins = getInputValue(inputs.resins);
-                    const asphaltenes = getInputValue(inputs.asphaltenes);
 
-                    // --- Mix Component Totals ---
                     const totalComponents = clampRound(c170 + sbs + ha32 + bitlinker, 0, 100, 2);
                     const remaining = clampRound(100 - totalComponents, -100, 100, 2);
-                    const isValid = Math.abs(totalComponents - 100) < 0.5;
+                    const isValid = Math.abs(totalComponents - 100) < tolerance;
 
-                    // --- SARA Totals ---
-                    const totalSara = clampRound(saturates + aromatics + resins + asphaltenes, 0, 100, 2);
-                    const saraValid = Math.abs(totalSara - 100) < 0.5;
-
-                    // Highlight invalid inputs
                     if (!isValid) {
-                        componentInputs.forEach(input => {
-                            if (input && getInputValue(input) > 0) input.classList.add('invalid-input');
-                        });
-                    }
-                    if (!saraValid) {
-                        saraInputs.forEach(input => {
-                            if (input && getInputValue(input) > 0) input.classList.add('invalid-input');
-                        });
+                        componentInputs.forEach(input => { if (input) input.classList.add('invalid-input'); });
                     }
 
-                    // Update totals display
                     if (totalPercentageEl) totalPercentageEl.textContent = `Total Bitumen Mix: ${totalComponents.toFixed(2)}%`;
                     if (remainingEl) remainingEl.querySelector('span').textContent = `Remaining: ${remaining.toFixed(2)}%`;
-                    if (remainingEl) remainingEl.querySelector('span').classList.toggle('text-red-600', !isValid || !saraValid);
+                    if (remainingEl) remainingEl.querySelector('span').classList.toggle('text-red-600', !isValid);
 
-                    // Status messages
                     let statusMessages = [];
                     if (!isValid) statusMessages.push('Main components must total 100%');
-                    if (!saraValid) statusMessages.push('SARA components must total 100%');
                     const statusMessage = statusMessages.length ? statusMessages.join(' and ') : 'Valid';
                     if (statusTextEl) statusTextEl.textContent = statusMessage;
                     if (statusIconEl) statusIconEl.textContent = statusMessages.length ? '⚠️' : '✅';
-
-                    // --- Quality Calculation ---
-                    // Base qualities (scaled to 0–1, then to 100% for display)
-                    let adhesion = pEffect.adhesion;
-                    let durability = pEffect.durability;
-                    let flexibility = pEffect.flexibility;
-                    let tempResistance = pEffect.tempResistance;
-                    let agingResistance = pEffect.agingResistance;
-
-                    // Apply SARA effects (normalized to avoid extreme values)
-                    if (saraValid) {
-                        adhesion = (resins / 100) * 0.5 + (aromatics / 100) * 0.3 + (asphaltenes / 100) * 0.2;
-                        durability = (asphaltenes / 100) * 0.6 + (resins / 100) * 0.3 + (saturates / 100) * 0.1;
-                        flexibility = (aromatics / 100) * 0.7 + (saturates / 100) * 0.2 + (resins / 100) * 0.1;
-                        tempResistance = (asphaltenes / 100) * 0.8 + (resins / 100) * 0.15 + (saturates / 100) * 0.05;
-                        agingResistance = (resins / 100) * 0.6 + (asphaltenes / 100) * 0.3 + (aromatics / 100) * 0.1;
-                    } else {
-                        // Use default values if SARA composition is invalid to prevent skewed results
-                        adhesion = pEffect.adhesion;
-                        durability = pEffect.durability;
-                        flexibility = pEffect.flexibility;
-                        tempResistance = pEffect.tempResistance;
-                        agingResistance = pEffect.agingResistance;
+                    
+                    if (!isValid) {
+                        // Clear chart and values if inputs are invalid
+                        if (chart) {
+                            chart.data.datasets[0].data = [0, 0, 0, 0, 0];
+                            chart.update();
+                        }
+                        Object.values(qualityEls).forEach(el => { if (el) el.textContent = '--'; });
+                        return; // Stop calculation
                     }
 
-                    // Apply SBS and Bitlinker effects
-                    // Polymer effects are now scaled by their percentage contribution
-                    const totalPolymerAndAdditives = sbs + ha32 + bitlinker;
-                    if (totalPolymerAndAdditives > 0) {
-                        const sbsFactor = sbs / totalPolymerAndAdditives;
-                        const bitlinkerFactor = bitlinker / totalPolymerAndAdditives;
+                    // Base qualities for C170 bitumen (hardcoded, since SARA composition is removed)
+                    const baseQualities = {
+                        adhesion: 0.315,
+                        durability: 0.245,
+                        flexibility: 0.34,
+                        tempResistance: 0.21,
+                        agingResistance: 0.255,
+                    };
 
-                        adhesion = adhesion * (1 + sbsFactor * 0.2 + bitlinkerFactor * 0.1);
-                        durability = durability * (1 + sbsFactor * 0.3 + bitlinkerFactor * 0.15);
-                        flexibility = flexibility * (1 + sbsFactor * 0.4 + bitlinkerFactor * 0.1);
-                        tempResistance = tempResistance * (1 + sbsFactor * 0.35 + bitlinkerFactor * 0.2);
-                        agingResistance = agingResistance * (1 + sbsFactor * 0.3 + bitlinkerFactor * 0.15);
-                    }
+                    // Component quality contributions (scaled by percentage)
+                    const sbsQualities = {
+                        adhesion: 0.9, durability: 0.95, flexibility: 1, tempResistance: 0.9, agingResistance: 0.95
+                    };
+                    const ha32Qualities = {
+                        adhesion: 0.7, durability: 0.6, flexibility: 0.8, tempResistance: 0.7, agingResistance: 0.6
+                    };
+                    const bitlinkerQualities = {
+                        adhesion: 0.8, durability: 0.8, flexibility: 0.8, tempResistance: 0.8, agingResistance: 0.8
+                    };
 
-                    // Apply additive effects (multiplicative)
+                    // Final calculation as a weighted average
+                    const finalQualities = {
+                        adhesion: (c170 * baseQualities.adhesion + sbs * sbsQualities.adhesion + ha32 * ha32Qualities.adhesion + bitlinker * bitlinkerQualities.adhesion) / 100,
+                        durability: (c170 * baseQualities.durability + sbs * sbsQualities.durability + ha32 * ha32Qualities.durability + bitlinker * bitlinkerQualities.durability) / 100,
+                        flexibility: (c170 * baseQualities.flexibility + sbs * sbsQualities.flexibility + ha32 * ha32Qualities.flexibility + bitlinker * bitlinkerQualities.flexibility) / 100,
+                        tempResistance: (c170 * baseQualities.tempResistance + sbs * sbsQualities.tempResistance + ha32 * ha32Qualities.tempResistance + bitlinker * bitlinkerQualities.tempResistance) / 100,
+                        agingResistance: (c170 * baseQualities.agingResistance + sbs * sbsQualities.agingResistance + ha32 * ha32Qualities.agingResistance + bitlinker * bitlinkerQualities.agingResistance) / 100,
+                    };
+
+                    // Additive effects as simple boosts
                     if (hasCNT) {
-                        adhesion *= additiveEffects.carbonNanotubes.adhesion;
-                        durability *= additiveEffects.carbonNanotubes.durability;
-                        flexibility *= additiveEffects.carbonNanotubes.flexibility;
-                        tempResistance *= additiveEffects.carbonNanotubes.tempResistance;
-                        agingResistance *= additiveEffects.carbonNanotubes.agingResistance;
+                        finalQualities.adhesion += 0.05;
+                        finalQualities.durability += 0.05;
+                        finalQualities.flexibility += 0.02;
                     }
                     if (hasWax) {
-                        adhesion *= additiveEffects.syntheticWax.adhesion;
-                        durability *= additiveEffects.syntheticWax.durability;
-                        flexibility *= additiveEffects.syntheticWax.flexibility;
-                        tempResistance *= additiveEffects.syntheticWax.tempResistance;
-                        agingResistance *= additiveEffects.syntheticWax.agingResistance;
+                        finalQualities.flexibility -= 0.03; // Wax can reduce flexibility
                     }
 
                     // Other metrics
-                    const sbsWeight = sbs / 100;
                     const rapRasWeight = (rap + ras) / 100;
+                    const c170Weight = c170 / 100;
+                    const sbsWeight = sbs / 100;
+                    const bitlinkerWeight = bitlinker / 100;
 
-                    let elasticRecovery = 45 + (sbsWeight * 50) - (rapRasWeight * 10);
-                    let softeningPoint = 50 + (asphaltenes / 100) * 15 + (sbsWeight * 20) - (aromatics / 100) * 5;
-                    let settingTime = 120 - (bitlinker / 100) * 50 + (hasWax ? 15 : 0) - (hasCNT ? 5 : 0);
+                    const elasticRecovery = 45 + (sbsWeight * 50) - (rapRasWeight * 10);
+                    const softeningPoint = 50 + (sbsWeight * 20) + (bitlinkerWeight * 5) - (rapRasWeight * 5);
+                    const settingTime = 120 - (bitlinkerWeight * 50) + (hasWax ? 15 : 0) - (hasCNT ? 5 : 0);
 
                     // Final results (clamped and scaled to 100)
-                    const finalResults = {
-                        adhesion: clampRound(adhesion * 100, 40, 100, 1),
-                        durability: clampRound(durability * 100, 40, 100, 1),
-                        flexibility: clampRound(flexibility * 100, 40, 100, 1),
-                        tempResistance: clampRound(tempResistance * 100, 40, 100, 1),
-                        agingResistance: clampRound(agingResistance * 100, 40, 100, 1),
+                    const results = {
+                        adhesion: clampRound(finalQualities.adhesion * 100, 40, 100, 1),
+                        durability: clampRound(finalQualities.durability * 100, 40, 100, 1),
+                        flexibility: clampRound(finalQualities.flexibility * 100, 40, 100, 1),
+                        tempResistance: clampRound(finalQualities.tempResistance * 100, 40, 100, 1),
+                        agingResistance: clampRound(finalQualities.agingResistance * 100, 40, 100, 1),
                         elasticRecovery: clampRound(elasticRecovery, 30, 95, 1),
                         softeningPoint: clampRound(softeningPoint, 55, 90, 1),
                         settingTime: clampRound(settingTime, 10, 180, 0),
@@ -457,26 +330,22 @@
                     // Update DOM elements
                     Object.entries(qualityEls).forEach(([key, el]) => {
                         if (el) {
-                            el.textContent = finalResults[key] ? finalResults[key].toFixed(key === 'settingTime' ? 0 : 1) : 'N/A';
-                        } else {
-                            console.warn(`Quality element "${key}" not found`);
+                            el.textContent = (results[key] !== undefined) ? results[key].toFixed(key === 'settingTime' ? 0 : 1) : '--';
                         }
                     });
 
                     // Update Chart
                     if (chart) {
                         const chartData = [
-                            finalResults.adhesion,
-                            finalResults.durability,
-                            finalResults.flexibility,
-                            finalResults.tempResistance,
-                            finalResults.agingResistance,
+                            results.adhesion,
+                            results.durability,
+                            results.flexibility,
+                            results.tempResistance,
+                            results.agingResistance,
                         ];
                         if (chartData.every(val => !isNaN(val))) {
                             chart.data.datasets[0].data = chartData;
                             chart.update();
-                        } else {
-                            console.error('Invalid chart data:', chartData);
                         }
                     }
                 } catch (error) {
@@ -488,68 +357,112 @@
 
             // Reset function
             const resetValues = () => {
-                Object.entries(inputs).forEach(([key, el]) => {
-                    if (!el) return;
-                    if (el.type === 'checkbox') {
-                        el.checked = defaults[key];
-                    } else {
-                        el.value = defaults[key];
-                        el.classList.remove('invalid-input');
+                Object.entries(defaults).forEach(([key, value]) => {
+                    const el = inputs[key];
+                    if (el) {
+                        if (el.type === 'checkbox') {
+                            el.checked = value;
+                        } else {
+                            el.value = value;
+                            el.classList.remove('invalid-input');
+                        }
                     }
                 });
                 updateCalculations();
             };
 
-            // Debounced update
-            let timeout;
-            const debounceUpdate = () => {
-                clearTimeout(timeout);
-                timeout = setTimeout(updateCalculations, 100);
-            };
-            
             // Modal functions
-            const showModal = () => {
-                resetModal.classList.remove('hidden');
-            };
-
-            const hideModal = () => {
-                resetModal.classList.add('hidden');
-            };
+            const showModal = () => resetModal.classList.remove('hidden');
+            const hideModal = () => resetModal.classList.add('hidden');
 
             // Event Listeners
-            Object.values(inputs).forEach(input => {
-                if (input) {
-                    input.addEventListener('input', debounceUpdate);
-                }
-            });
-
-            // Replaced the confirm() with a custom modal
-            if (resetButton) {
-                resetButton.addEventListener('click', showModal);
+            if (submitButton) {
+                submitButton.addEventListener('click', updateCalculations);
             }
-
+            if (resetButton) resetButton.addEventListener('click', showModal);
             if (resetConfirmBtn) {
                 resetConfirmBtn.addEventListener('click', () => {
                     resetValues();
                     hideModal();
                 });
             }
-
-            if (resetCancelBtn) {
-                resetCancelBtn.addEventListener('click', hideModal);
-            }
+            if (resetCancelBtn) resetCancelBtn.addEventListener('click', hideModal);
 
             // Close modal on outside click
             if (resetModal) {
                 resetModal.addEventListener('click', (e) => {
-                    if (e.target === resetModal) {
-                        hideModal();
-                    }
+                    if (e.target === resetModal) hideModal();
                 });
             }
 
+            // Function to initialize the chart
+            const initializeChart = () => {
+                const ctx = getEl('qualityChart').getContext('2d');
+                chart = new Chart(ctx, {
+                    type: 'radar',
+                    data: {
+                        labels: ['Adhesion', 'Durability', 'Flexibility', 'Temp. Resistance', 'Aging Resistance'],
+                        datasets: [{
+                            label: 'Mix Quality',
+                            data: [0, 0, 0, 0, 0],
+                            backgroundColor: 'rgba(79, 70, 229, 0.2)',
+                            borderColor: 'rgba(79, 70, 229, 1)',
+                            borderWidth: 2,
+                            pointBackgroundColor: 'rgba(79, 70, 229, 1)',
+                            pointBorderColor: '#fff',
+                            pointHoverBackgroundColor: '#fff',
+                            pointHoverBorderColor: 'rgba(79, 70, 229, 1)'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        elements: {
+                            line: {
+                                tension: 0.1
+                            }
+                        },
+                        scales: {
+                            r: {
+                                angleLines: {
+                                    display: false
+                                },
+                                suggestedMin: 0,
+                                suggestedMax: 100,
+                                pointLabels: {
+                                    font: {
+                                        size: 14,
+                                        family: 'Inter',
+                                        weight: 'bold'
+                                    },
+                                    color: '#4b5563'
+                                },
+                                ticks: {
+                                    display: false
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: (context) => {
+                                        return `${context.dataset.label}: ${context.raw.toFixed(1)}%`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            };
+
             // Initialize on load
-            resetValues();
+            window.onload = function() {
+                initializeChart();
+                resetValues();
+            };
         })();
     </script>
 </body>
