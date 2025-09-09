@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
@@ -112,7 +112,7 @@
                         <li>Flexibility: <span id="flexibility" class="font-bold">--</span>%</li>
                         <li>Temp Resistance: <span id="tempResistance" class="font-bold">--</span>%</li>
                         <li>Aging Resistance: <span id="agingResistance" class="font-bold">--</span>%</li>
-                        <li class="col-span-2">Elastic Recovery: <span id="elasticRecovery" class="font-bold">--</span>%</li>
+                        <li class="col-span-2">Torsional Recovery: <span id="torsionalRecovery" class="font-bold">--</span>%</li>
                         <li class="col-span-2">Softening Point: <span id="softeningPoint" class="font-bold">--</span> °C</li>
                         <li class="col-span-2">Setting Time: <span id="settingTime" class="font-bold">--</span> mins</li>
                     </ul>
@@ -134,6 +134,46 @@
                 Reset to Default
             </button>
         </div>
+
+        <!-- Section for Data Uploader -->
+        <div class="w-full bg-white rounded-3xl shadow-xl p-8 mt-8">
+            <div class="flex items-center justify-between cursor-pointer" onclick="toggleDataUploader()">
+                <h2 class="text-2xl font-bold text-gray-800">Bulk Data Uploader</h2>
+                <span id="uploaderToggleIcon" class="text-3xl font-bold text-gray-500 transform transition-transform duration-300 rotate-0">+</span>
+            </div>
+            <div id="dataUploaderContent" class="hidden mt-4 space-y-4">
+                <p class="text-sm text-gray-600">
+                    Paste your spreadsheet data below in CSV format. The first row should contain the column headers.
+                </p>
+                <div class="bg-gray-100 p-4 rounded-lg">
+                    <p class="text-xs font-mono text-gray-700">Example format (use the headers as shown):</p>
+                    <pre class="whitespace-pre-wrap text-xs text-gray-900 overflow-x-auto">
+Batch,C170,SBS,HA32,X-Link,Temp,Digestion,Softening,Torsional,Viscosity
+1,92.1,5.3,2.5,0.1,190,8,89.5,67,0.71
+2,92.15,5.25,2.5,0.1,190,8,89.2,67,0.76
+3,91.9,5.4,2.6,0.1,190,8,89.2,64,0.79</pre>
+                </div>
+                <textarea id="dataInputArea" class="w-full p-4 border rounded-lg h-40 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors" placeholder="Paste your CSV data here..."></textarea>
+                <button id="loadDataButton" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-full transition-colors duration-300">
+                    Load CSV Data to Database
+                </button>
+            </div>
+        </div>
+        
+        <!-- Section for Data Log -->
+        <div class="w-full bg-white rounded-3xl shadow-xl p-8 mt-8">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">Saved Lab Results</h2>
+            <div id="dataSummary" class="bg-gray-50 rounded-lg p-4 mb-4 hidden">
+                <h3 class="text-lg font-semibold text-gray-700">Summary of Imported Data</h3>
+                <ul class="text-sm text-gray-600 mt-2">
+                    <li>Average Softening Point: <span id="avgSoftening" class="font-bold">--</span>°C</li>
+                    <li>Average Torsional Recovery: <span id="avgTorsional" class="font-bold">--</span>%</li>
+                </ul>
+            </div>
+            <div id="dataLog" class="space-y-4">
+                <p class="text-gray-500 text-center">No data found in the database. Add some using the uploader above!</p>
+            </div>
+        </div>
     </div>
     
     <!-- Custom Modal for Confirmation -->
@@ -152,318 +192,472 @@
         </div>
     </div>
 
-    <script>
-        (() => {
-            // Helper to get DOM elements safely
-            const getEl = id => document.getElementById(id);
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Provided by the platform
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : undefined;
 
-            // DOM references
-            const inputs = {
-                c170Bitumen: getEl('c170Bitumen'),
-                sbs: getEl('sbs'),
-                ha32CombiningOil: getEl('ha32CombiningOil'),
-                bitlinker: getEl('bitlinker'),
-                rap: getEl('rap'),
-                ras: getEl('ras'),
-                carbonNanotubes: getEl('carbonNanotubes'),
-                syntheticWax: getEl('syntheticWax'),
+        let db, auth, userId, labDataDocs = [], importedDataDocs = [];
+        let chart;
+        
+        // Helper to get DOM elements safely
+        const getEl = id => document.getElementById(id);
+
+        // DOM references
+        const inputs = {
+            c170Bitumen: getEl('c170Bitumen'),
+            sbs: getEl('sbs'),
+            ha32CombiningOil: getEl('ha32CombiningOil'),
+            bitlinker: getEl('bitlinker'),
+            rap: getEl('rap'),
+            ras: getEl('ras'),
+            carbonNanotubes: getEl('carbonNanotubes'),
+            syntheticWax: getEl('syntheticWax'),
+        };
+
+        const totalPercentageEl = getEl('totalPercentage');
+        const remainingEl = getEl('remaining');
+        const statusIconEl = getEl('statusIcon');
+        const statusTextEl = getEl('statusText');
+        const submitButton = getEl('submitButton');
+        const resetButton = getEl('resetButton');
+
+        // Modal references
+        const resetModal = getEl('resetModal');
+        const resetConfirmBtn = getEl('resetConfirmBtn');
+        const resetCancelBtn = getEl('resetCancelBtn');
+
+        // Quality spans
+        const qualityEls = {
+            adhesion: getEl('adhesion'),
+            durability: getEl('durability'),
+            flexibility: getEl('flexibility'),
+            tempResistance: getEl('tempResistance'),
+            agingResistance: getEl('agingResistance'),
+            torsionalRecovery: getEl('torsionalRecovery'),
+            softeningPoint: getEl('softeningPoint'),
+            settingTime: getEl('settingTime'),
+        };
+        
+        // Data Uploader references
+        const dataUploaderContent = getEl('dataUploaderContent');
+        const uploaderToggleIcon = getEl('uploaderToggleIcon');
+        const dataInputArea = getEl('dataInputArea');
+        const loadDataButton = getEl('loadDataButton');
+        const dataLogEl = getEl('dataLog');
+        const dataSummaryEl = getEl('dataSummary');
+        const avgSofteningEl = getEl('avgSoftening');
+        const avgTorsionalEl = getEl('avgTorsional');
+
+        // Default values
+        const defaults = {
+            c170Bitumen: 70,
+            sbs: 15,
+            ha32CombiningOil: 10,
+            bitlinker: 5,
+            rap: 0,
+            ras: 0,
+            carbonNanotubes: false,
+            syntheticWax: false,
+        };
+
+        // Helpers
+        const clampRound = (num, min = 0, max = 100, decimals = 2) => {
+            const clamped = Math.min(Math.max(num, min), max);
+            return Number(clamped.toFixed(decimals));
+        };
+        const getInputValue = el => {
+            if (!el) return 0;
+            if (el.type === 'checkbox') return el.checked;
+            const val = el.value === '' || isNaN(el.value) ? 0 : Number(el.value);
+            return val < 0 ? 0 : val;
+        };
+
+        // UI toggles
+        window.toggleDataUploader = () => {
+            const isHidden = dataUploaderContent.classList.toggle('hidden');
+            uploaderToggleIcon.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(45deg)';
+        };
+
+        // --- Linear Regression Model Functions ---
+
+        // Simple linear regression to predict y based on x
+        const fitLinearModel = (xData, yData) => {
+            const n = xData.length;
+            let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+            for (let i = 0; i < n; i++) {
+                sumX += xData[i];
+                sumY += yData[i];
+                sumXY += xData[i] * yData[i];
+                sumX2 += xData[i] * xData[i];
+            }
+            const m = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+            const b = (sumY / n) - (m * sumX / n);
+            return (x) => m * x + b;
+        };
+        
+        // Predicts softening point and torsional recovery based on uploaded data
+        const predictFromData = (data, currentMix) => {
+            if (data.length < 2) {
+                console.warn("Not enough data to train the model. Using fallback calculations.");
+                return null;
+            }
+
+            const sbsData = data.map(d => d.SBS);
+            const softeningData = data.map(d => d.Softening);
+            const torsionalData = data.map(d => d.Torsional);
+
+            // Filter out invalid data points
+            const validSofteningData = softeningData.filter(val => !isNaN(val));
+            const validTorsionalData = torsionalData.filter(val => !isNaN(val));
+            const validSbsData = sbsData.filter((val, i) => !isNaN(softeningData[i]) && !isNaN(torsionalData[i]));
+
+            if (validSbsData.length < 2) {
+                console.warn("Filtered data too small to train. Using fallback calculations.");
+                return null;
+            }
+
+            // Train the linear models
+            const predictSoftening = fitLinearModel(validSbsData, validSofteningData);
+            const predictTorsional = fitLinearModel(validSbsData, validTorsionalData);
+
+            // Predict the new values
+            const predictedSofteningPoint = predictSoftening(currentMix.sbs);
+            const predictedTorsionalRecovery = predictTorsional(currentMix.sbs);
+
+            return {
+                softeningPoint: predictedSofteningPoint,
+                torsionalRecovery: predictedTorsionalRecovery
             };
+        };
+        
+        // --- End of Linear Regression Model Functions ---
 
-            const totalPercentageEl = getEl('totalPercentage');
-            const remainingEl = getEl('remaining');
-            const statusIconEl = getEl('statusIcon');
-            const statusTextEl = getEl('statusText');
-            const submitButton = getEl('submitButton');
-            const resetButton = getEl('resetButton');
 
-            // Modal references
-            const resetModal = getEl('resetModal');
-            const resetConfirmBtn = getEl('resetConfirmBtn');
-            const resetCancelBtn = getEl('resetCancelBtn');
+        // Main calculation function
+        const updateCalculations = (importedData = []) => {
+            const tolerance = 0.5;
+            try {
+                const componentInputs = [inputs.c170Bitumen, inputs.sbs, inputs.ha32CombiningOil, inputs.bitlinker];
+                componentInputs.forEach(input => {
+                    if (input && input.type === 'number') input.classList.remove('invalid-input');
+                });
 
-            // Quality spans
-            const qualityEls = {
-                adhesion: getEl('adhesion'),
-                durability: getEl('durability'),
-                flexibility: getEl('flexibility'),
-                tempResistance: getEl('tempResistance'),
-                agingResistance: getEl('agingResistance'),
-                elasticRecovery: getEl('elasticRecovery'),
-                softeningPoint: getEl('softeningPoint'),
-                settingTime: getEl('settingTime'),
-            };
+                const c170 = getInputValue(inputs.c170Bitumen);
+                const sbs = getInputValue(inputs.sbs);
+                const ha32 = getInputValue(inputs.ha32CombiningOil);
+                const bitlinker = getInputValue(inputs.bitlinker);
+                const rap = getInputValue(inputs.rap);
+                const ras = getInputValue(inputs.ras);
+                const hasCNT = getInputValue(inputs.carbonNanotubes);
+                const hasWax = getInputValue(inputs.syntheticWax);
 
-            // Variable to hold the Chart.js instance
-            let chart;
+                const totalComponents = clampRound(c170 + sbs + ha32 + bitlinker, 0, 100, 2);
+                const remaining = clampRound(100 - totalComponents, -100, 100, 2);
+                const isValid = Math.abs(totalComponents - 100) < tolerance;
 
-            // Default values
-            const defaults = {
-                c170Bitumen: 70,
-                sbs: 15,
-                ha32CombiningOil: 10,
-                bitlinker: 5,
-                rap: 0,
-                ras: 0,
-                carbonNanotubes: false,
-                syntheticWax: false,
-            };
-
-            // Helpers
-            const clampRound = (num, min = 0, max = 100, decimals = 2) => {
-                const clamped = Math.min(Math.max(num, min), max);
-                return Number(clamped.toFixed(decimals));
-            };
-            const getInputValue = el => {
-                if (!el) return 0;
-                if (el.type === 'checkbox') return el.checked;
-                const val = el.value === '' || isNaN(el.value) ? 0 : Number(el.value);
-                return val < 0 ? 0 : val;
-            };
-
-            // Main calculation function
-            const updateCalculations = () => {
-                const tolerance = 0.5; // Acceptable deviation for totals
-                try {
-                    const componentInputs = [inputs.c170Bitumen, inputs.sbs, inputs.ha32CombiningOil, inputs.bitlinker];
-                    componentInputs.forEach(input => {
-                        if (input && input.type === 'number') input.classList.remove('invalid-input');
-                    });
-
-                    const c170 = getInputValue(inputs.c170Bitumen);
-                    const sbs = getInputValue(inputs.sbs);
-                    const ha32 = getInputValue(inputs.ha32CombiningOil);
-                    const bitlinker = getInputValue(inputs.bitlinker);
-                    const rap = getInputValue(inputs.rap);
-                    const ras = getInputValue(inputs.ras);
-                    const hasCNT = getInputValue(inputs.carbonNanotubes);
-                    const hasWax = getInputValue(inputs.syntheticWax);
-
-                    const totalComponents = clampRound(c170 + sbs + ha32 + bitlinker, 0, 100, 2);
-                    const remaining = clampRound(100 - totalComponents, -100, 100, 2);
-                    const isValid = Math.abs(totalComponents - 100) < tolerance;
-
-                    if (!isValid) {
-                        componentInputs.forEach(input => { if (input) input.classList.add('invalid-input'); });
-                    }
-
-                    if (totalPercentageEl) totalPercentageEl.textContent = `Total Bitumen Mix: ${totalComponents.toFixed(2)}%`;
-                    if (remainingEl) remainingEl.querySelector('span').textContent = `Remaining: ${remaining.toFixed(2)}%`;
-                    if (remainingEl) remainingEl.querySelector('span').classList.toggle('text-red-600', !isValid);
-
-                    let statusMessages = [];
-                    if (!isValid) statusMessages.push('Main components must total 100%');
-                    const statusMessage = statusMessages.length ? statusMessages.join(' and ') : 'Valid';
-                    if (statusTextEl) statusTextEl.textContent = statusMessage;
-                    if (statusIconEl) statusIconEl.textContent = statusMessages.length ? '⚠️' : '✅';
-                    
-                    if (!isValid) {
-                        // Clear chart and values if inputs are invalid
-                        if (chart) {
-                            chart.data.datasets[0].data = [0, 0, 0, 0, 0];
-                            chart.update();
-                        }
-                        Object.values(qualityEls).forEach(el => { if (el) el.textContent = '--'; });
-                        return; // Stop calculation
-                    }
-
-                    // Base qualities for C170 bitumen (hardcoded, since SARA composition is removed)
-                    const baseQualities = {
-                        adhesion: 0.315,
-                        durability: 0.245,
-                        flexibility: 0.34,
-                        tempResistance: 0.21,
-                        agingResistance: 0.255,
-                    };
-
-                    // Component quality contributions (scaled by percentage)
-                    const sbsQualities = {
-                        adhesion: 0.9, durability: 0.95, flexibility: 1, tempResistance: 0.9, agingResistance: 0.95
-                    };
-                    const ha32Qualities = {
-                        adhesion: 0.7, durability: 0.6, flexibility: 0.8, tempResistance: 0.7, agingResistance: 0.6
-                    };
-                    const bitlinkerQualities = {
-                        adhesion: 0.8, durability: 0.8, flexibility: 0.8, tempResistance: 0.8, agingResistance: 0.8
-                    };
-
-                    // Final calculation as a weighted average
-                    const finalQualities = {
-                        adhesion: (c170 * baseQualities.adhesion + sbs * sbsQualities.adhesion + ha32 * ha32Qualities.adhesion + bitlinker * bitlinkerQualities.adhesion) / 100,
-                        durability: (c170 * baseQualities.durability + sbs * sbsQualities.durability + ha32 * ha32Qualities.durability + bitlinker * bitlinkerQualities.durability) / 100,
-                        flexibility: (c170 * baseQualities.flexibility + sbs * sbsQualities.flexibility + ha32 * ha32Qualities.flexibility + bitlinker * bitlinkerQualities.flexibility) / 100,
-                        tempResistance: (c170 * baseQualities.tempResistance + sbs * sbsQualities.tempResistance + ha32 * ha32Qualities.tempResistance + bitlinker * bitlinkerQualities.tempResistance) / 100,
-                        agingResistance: (c170 * baseQualities.agingResistance + sbs * sbsQualities.agingResistance + ha32 * ha32Qualities.agingResistance + bitlinker * bitlinkerQualities.agingResistance) / 100,
-                    };
-
-                    // Additive effects as simple boosts
-                    if (hasCNT) {
-                        finalQualities.adhesion += 0.05;
-                        finalQualities.durability += 0.05;
-                        finalQualities.flexibility += 0.02;
-                    }
-                    if (hasWax) {
-                        finalQualities.flexibility -= 0.03; // Wax can reduce flexibility
-                    }
-
-                    // Other metrics
-                    const rapRasWeight = (rap + ras) / 100;
-                    const c170Weight = c170 / 100;
-                    const sbsWeight = sbs / 100;
-                    const bitlinkerWeight = bitlinker / 100;
-
-                    const elasticRecovery = 45 + (sbsWeight * 50) - (rapRasWeight * 10);
-                    const softeningPoint = 50 + (sbsWeight * 20) + (bitlinkerWeight * 5) - (rapRasWeight * 5);
-                    const settingTime = 120 - (bitlinkerWeight * 50) + (hasWax ? 15 : 0) - (hasCNT ? 5 : 0);
-
-                    // Final results (clamped and scaled to 100)
-                    const results = {
-                        adhesion: clampRound(finalQualities.adhesion * 100, 40, 100, 1),
-                        durability: clampRound(finalQualities.durability * 100, 40, 100, 1),
-                        flexibility: clampRound(finalQualities.flexibility * 100, 40, 100, 1),
-                        tempResistance: clampRound(finalQualities.tempResistance * 100, 40, 100, 1),
-                        agingResistance: clampRound(finalQualities.agingResistance * 100, 40, 100, 1),
-                        elasticRecovery: clampRound(elasticRecovery, 30, 95, 1),
-                        softeningPoint: clampRound(softeningPoint, 55, 90, 1),
-                        settingTime: clampRound(settingTime, 10, 180, 0),
-                    };
-
-                    // Update DOM elements
-                    Object.entries(qualityEls).forEach(([key, el]) => {
-                        if (el) {
-                            el.textContent = (results[key] !== undefined) ? results[key].toFixed(key === 'settingTime' ? 0 : 1) : '--';
-                        }
-                    });
-
-                    // Update Chart
-                    if (chart) {
-                        const chartData = [
-                            results.adhesion,
-                            results.durability,
-                            results.flexibility,
-                            results.tempResistance,
-                            results.agingResistance,
-                        ];
-                        if (chartData.every(val => !isNaN(val))) {
-                            chart.data.datasets[0].data = chartData;
-                            chart.update();
-                        }
-                    }
-                } catch (error) {
-                    console.error('Calculation error:', error);
-                    if (statusTextEl) statusTextEl.textContent = 'Calculation error';
-                    if (statusIconEl) statusIconEl.textContent = '⚠️';
+                if (!isValid) {
+                    componentInputs.forEach(input => { if (input) input.classList.add('invalid-input'); });
                 }
-            };
 
-            // Reset function
-            const resetValues = () => {
-                Object.entries(defaults).forEach(([key, value]) => {
-                    const el = inputs[key];
-                    if (el) {
-                        if (el.type === 'checkbox') {
-                            el.checked = value;
-                        } else {
-                            el.value = value;
-                            el.classList.remove('invalid-input');
+                if (totalPercentageEl) totalPercentageEl.textContent = `Total Bitumen Mix: ${totalComponents.toFixed(2)}%`;
+                if (remainingEl) remainingEl.querySelector('span').textContent = `Remaining: ${remaining.toFixed(2)}%`;
+                if (remainingEl) remainingEl.querySelector('span').classList.toggle('text-red-600', !isValid);
+
+                let statusMessages = [];
+                if (!isValid) statusMessages.push('Main components must total 100%');
+                const statusMessage = statusMessages.length ? statusMessages.join(' and ') : 'Valid';
+                if (statusTextEl) statusTextEl.textContent = statusMessage;
+                if (statusIconEl) statusIconEl.textContent = statusMessages.length ? '⚠️' : '✅';
+                
+                if (!isValid) {
+                    if (chart) {
+                        chart.data.datasets[0].data = [0, 0, 0, 0, 0];
+                        chart.update();
+                    }
+                    Object.values(qualityEls).forEach(el => { if (el) el.textContent = '--'; });
+                    return;
+                }
+
+                const baseQualities = { adhesion: 0.315, durability: 0.245, flexibility: 0.34, tempResistance: 0.21, agingResistance: 0.255 };
+                const sbsQualities = { adhesion: 0.9, durability: 0.95, flexibility: 1, tempResistance: 0.9, agingResistance: 0.95 };
+                const ha32Qualities = { adhesion: 0.7, durability: 0.6, flexibility: 0.8, tempResistance: 0.7, agingResistance: 0.6 };
+                const bitlinkerQualities = { adhesion: 0.8, durability: 0.8, flexibility: 0.8, tempResistance: 0.8, agingResistance: 0.8 };
+
+                const finalQualities = {
+                    adhesion: (c170 * baseQualities.adhesion + sbs * sbsQualities.adhesion + ha32 * ha32Qualities.adhesion + bitlinker * bitlinkerQualities.adhesion) / 100,
+                    durability: (c170 * baseQualities.durability + sbs * sbsQualities.durability + ha32 * ha32Qualities.durability + bitlinker * bitlinkerQualities.bitlinkerQualities) / 100,
+                    flexibility: (c170 * baseQualities.flexibility + sbs * sbsQualities.flexibility + ha32 * ha32Qualities.flexibility + bitlinker * bitlinkerQualities.bitlinkerQualities) / 100,
+                    tempResistance: (c170 * baseQualities.tempResistance + sbs * sbsQualities.tempResistance + ha32 * ha32Qualities.tempResistance + bitlinker * bitlinkerQualities.bitlinkerQualities) / 100,
+                    agingResistance: (c170 * baseQualities.agingResistance + sbs * sbsQualities.agingResistance + ha32 * ha32Qualities.agingResistance + bitlinker * bitlinkerQualities.bitlinkerQualities) / 100,
+                };
+
+                if (hasCNT) { finalQualities.adhesion += 0.05; finalQualities.durability += 0.05; finalQualities.flexibility += 0.02; }
+                if (hasWax) { finalQualities.flexibility -= 0.03; }
+
+                const sbsWeight = sbs / 100;
+                const bitlinkerWeight = bitlinker / 100;
+                const rapRasWeight = (rap + ras) / 100;
+
+                const settingTime = 120 - (bitlinkerWeight * 50) + (hasWax ? 15 : 0) - (hasCNT ? 5 : 0);
+                
+                let softeningPoint, torsionalRecovery;
+                const importedDataObjects = importedData.map(doc => doc.data());
+                const predictions = predictFromData(importedDataObjects, { c170, sbs, ha32, bitlinker, rap, ras, hasCNT, hasWax });
+                if (predictions) {
+                    softeningPoint = predictions.softeningPoint;
+                    torsionalRecovery = predictions.torsionalRecovery;
+                } else {
+                    // Fallback to old formulas if no valid data exists
+                    torsionalRecovery = 50 + (sbsWeight * 30) - (rapRasWeight * 10);
+                    softeningPoint = 60 + (sbsWeight * 25) + (bitlinkerWeight * 5) - (rapRasWeight * 5);
+                }
+
+                const results = {
+                    adhesion: clampRound(finalQualities.adhesion * 100, 40, 100, 1),
+                    durability: clampRound(finalQualities.durability * 100, 40, 100, 1),
+                    flexibility: clampRound(finalQualities.flexibility * 100, 40, 100, 1),
+                    tempResistance: clampRound(finalQualities.tempResistance * 100, 40, 100, 1),
+                    agingResistance: clampRound(finalQualities.agingResistance * 100, 40, 100, 1),
+                    torsionalRecovery: clampRound(torsionalRecovery, 30, 95, 1),
+                    softeningPoint: clampRound(softeningPoint, 55, 90, 1),
+                    settingTime: clampRound(settingTime, 10, 180, 0),
+                };
+
+                Object.entries(qualityEls).forEach(([key, el]) => {
+                    if (el) { el.textContent = (results[key] !== undefined) ? results[key].toFixed(key === 'settingTime' ? 0 : 1) : '--'; }
+                });
+
+                if (chart) {
+                    const chartData = [ results.adhesion, results.durability, results.flexibility, results.tempResistance, results.agingResistance ];
+                    if (chartData.every(val => !isNaN(val))) {
+                        chart.data.datasets[0].data = chartData;
+                        chart.update();
+                    }
+                }
+            } catch (error) {
+                console.error('Calculation error:', error);
+                if (statusTextEl) statusTextEl.textContent = 'Calculation error';
+                if (statusIconEl) statusIconEl.textContent = '⚠️';
+            }
+        };
+
+        const resetValues = () => {
+            Object.entries(defaults).forEach(([key, value]) => {
+                const el = inputs[key];
+                if (el) {
+                    if (el.type === 'checkbox') {
+                        el.checked = value;
+                    } else {
+                        el.value = value;
+                        el.classList.remove('invalid-input');
+                    }
+                }
+            });
+            updateCalculations(importedDataDocs);
+        };
+
+        const showModal = () => resetModal.classList.remove('hidden');
+        const hideModal = () => resetModal.classList.add('hidden');
+
+        const initializeChart = () => {
+            const ctx = getEl('qualityChart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: ['Adhesion', 'Durability', 'Flexibility', 'Temp. Resistance', 'Aging Resistance'],
+                    datasets: [{
+                        label: 'Mix Quality',
+                        data: [0, 0, 0, 0, 0],
+                        backgroundColor: 'rgba(79, 70, 229, 0.2)',
+                        borderColor: 'rgba(79, 70, 229, 1)',
+                        borderWidth: 2,
+                        pointBackgroundColor: 'rgba(79, 70, 229, 1)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgba(79, 70, 229, 1)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    elements: { line: { tension: 0.1 } },
+                    scales: {
+                        r: {
+                            angleLines: { display: false },
+                            suggestedMin: 0,
+                            suggestedMax: 100,
+                            pointLabels: {
+                                font: { size: 14, family: 'Inter', weight: 'bold' },
+                                color: '#4b5563'
+                            },
+                            ticks: { display: false }
                         }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { callbacks: { label: (context) => `${context.dataset.label}: ${context.raw.toFixed(1)}%` } }
+                    }
+                }
+            });
+        };
+
+        const uploadCsvData = async () => {
+            try {
+                loadDataButton.textContent = 'Uploading...';
+                loadDataButton.disabled = true;
+
+                const csvString = dataInputArea.value;
+                const lines = csvString.trim().split('\n');
+                if (lines.length < 2) {
+                    throw new Error("CSV data must contain a header row and at least one data row.");
+                }
+
+                const headers = lines[0].split(',').map(header => header.trim());
+                const data = [];
+                for (let i = 1; i < lines.length; i++) {
+                    const values = lines[i].split(',').map(val => val.trim());
+                    if (values.length !== headers.length) {
+                        console.warn(`Skipping row ${i+1} due to inconsistent number of columns.`);
+                        continue;
+                    }
+                    const entry = {};
+                    headers.forEach((header, index) => {
+                        let value = values[index];
+                        if (!isNaN(value) && value !== '') {
+                            value = Number(value);
+                        } else if (value.toLowerCase() === 'true') {
+                            value = true;
+                        } else if (value.toLowerCase() === 'false') {
+                            value = false;
+                        }
+                        entry[header] = value;
+                    });
+                    data.push(entry);
+                }
+
+                if (data.length === 0) {
+                    throw new Error("No valid data rows found in the CSV.");
+                }
+
+                const importedDataRef = collection(db, `artifacts/${appId}/users/${userId}/imported_lab_data`);
+
+                for (const result of data) {
+                    await addDoc(importedDataRef, result);
+                }
+
+                dataInputArea.value = '';
+                console.log(`Successfully uploaded ${data.length} lab results.`);
+            } catch (e) {
+                console.error("Failed to upload data:", e);
+                // No alert, just log the error
+            } finally {
+                loadDataButton.textContent = 'Load CSV Data to Database';
+                loadDataButton.disabled = false;
+            }
+        };
+
+        const renderDataLog = (labDataDocs, importedDataDocs) => {
+            dataLogEl.innerHTML = '';
+            const allData = [...labDataDocs, ...importedDataDocs];
+            
+            const importedDataForCalc = importedDataDocs.map(doc => doc.data());
+            const validImportedData = importedDataForCalc.filter(d => !isNaN(d.Softening) && !isNaN(d.Torsional));
+
+            if (validImportedData.length > 0) {
+                const totalSoftening = validImportedData.reduce((sum, doc) => sum + (doc.Softening || 0), 0);
+                const totalTorsional = validImportedData.reduce((sum, doc) => sum + (doc.Torsional || 0), 0);
+                avgSofteningEl.textContent = (totalSoftening / validImportedData.length).toFixed(1);
+                avgTorsionalEl.textContent = (totalTorsional / validImportedData.length).toFixed(1);
+                dataSummaryEl.classList.remove('hidden');
+            } else {
+                dataSummaryEl.classList.add('hidden');
+            }
+
+            if (allData.length === 0) {
+                dataLogEl.innerHTML = '<p class="text-gray-500 text-center">No data found in the database. Add some using the uploader above!</p>';
+                return;
+            }
+
+            allData.forEach((doc) => {
+                const docData = doc.data();
+                const itemEl = document.createElement('div');
+                itemEl.className = 'bg-gray-50 p-4 rounded-lg shadow-inner';
+                itemEl.innerHTML = `
+                    <p class="text-sm font-semibold text-gray-800">Batch ID: ${doc.id}</p>
+                    <ul class="text-xs text-gray-600 mt-2 space-y-1">
+                        <li>**C170 Bitumen:** ${docData.c170Bitumen || '--'}%</li>
+                        <li>**SBS:** ${docData.sbs || '--'}%</li>
+                        <li>**Softening Point:** ${docData.Softening ? docData.Softening.toFixed(1) : '--'}°C</li>
+                        <li>**Torsional Recovery:** ${docData.Torsional ? docData.Torsional.toFixed(1) : '--'}%</li>
+                        <li>**Viscosity:** ${docData.Viscosity ? docData.Viscosity.toFixed(2) : '--'} Pa.s</li>
+                    </ul>
+                `;
+                dataLogEl.appendChild(itemEl);
+            });
+        };
+
+        window.onload = async function() {
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        console.log("User authenticated:", userId);
+                        
+                        const labResultsRef = collection(db, `artifacts/${appId}/users/${userId}/lab_results`);
+                        const importedDataRef = collection(db, `artifacts/${appId}/users/${userId}/imported_lab_data`);
+                        
+                        // Fetch the lab results once
+                        const labDocsSnapshot = await getDocs(labResultsRef);
+                        labDataDocs = labDocsSnapshot.docs;
+
+                        // Listen for real-time changes
+                        onSnapshot(importedDataRef, (snapshot) => {
+                            importedDataDocs = snapshot.docs;
+                            renderDataLog(labDataDocs, importedDataDocs);
+                            updateCalculations(importedDataDocs);
+                        });
+                        
+                    } else {
+                        console.log("User signed out or anonymous.");
+                        renderDataLog([], []);
+                        updateCalculations([]);
                     }
                 });
-                updateCalculations();
-            };
 
-            // Modal functions
-            const showModal = () => resetModal.classList.remove('hidden');
-            const hideModal = () => resetModal.classList.add('hidden');
-
-            // Event Listeners
-            if (submitButton) {
-                submitButton.addEventListener('click', updateCalculations);
+            } catch (e) {
+                console.error("Firebase initialization or authentication failed:", e);
             }
+            
+            initializeChart();
+            resetValues();
+
+            if (submitButton) submitButton.addEventListener('click', () => updateCalculations(importedDataDocs));
             if (resetButton) resetButton.addEventListener('click', showModal);
             if (resetConfirmBtn) {
-                resetConfirmBtn.addEventListener('click', () => {
-                    resetValues();
-                    hideModal();
-                });
+                resetConfirmBtn.addEventListener('click', () => { resetValues(); hideModal(); });
             }
             if (resetCancelBtn) resetCancelBtn.addEventListener('click', hideModal);
-
-            // Close modal on outside click
             if (resetModal) {
-                resetModal.addEventListener('click', (e) => {
-                    if (e.target === resetModal) hideModal();
-                });
+                resetModal.addEventListener('click', (e) => { if (e.target === resetModal) hideModal(); });
             }
-
-            // Function to initialize the chart
-            const initializeChart = () => {
-                const ctx = getEl('qualityChart').getContext('2d');
-                chart = new Chart(ctx, {
-                    type: 'radar',
-                    data: {
-                        labels: ['Adhesion', 'Durability', 'Flexibility', 'Temp. Resistance', 'Aging Resistance'],
-                        datasets: [{
-                            label: 'Mix Quality',
-                            data: [0, 0, 0, 0, 0],
-                            backgroundColor: 'rgba(79, 70, 229, 0.2)',
-                            borderColor: 'rgba(79, 70, 229, 1)',
-                            borderWidth: 2,
-                            pointBackgroundColor: 'rgba(79, 70, 229, 1)',
-                            pointBorderColor: '#fff',
-                            pointHoverBackgroundColor: '#fff',
-                            pointHoverBorderColor: 'rgba(79, 70, 229, 1)'
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        elements: {
-                            line: {
-                                tension: 0.1
-                            }
-                        },
-                        scales: {
-                            r: {
-                                angleLines: {
-                                    display: false
-                                },
-                                suggestedMin: 0,
-                                suggestedMax: 100,
-                                pointLabels: {
-                                    font: {
-                                        size: 14,
-                                        family: 'Inter',
-                                        weight: 'bold'
-                                    },
-                                    color: '#4b5563'
-                                },
-                                ticks: {
-                                    display: false
-                                }
-                            }
-                        },
-                        plugins: {
-                            legend: {
-                                display: false
-                            },
-                            tooltip: {
-                                callbacks: {
-                                    label: (context) => {
-                                        return `${context.dataset.label}: ${context.raw.toFixed(1)}%`;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                });
-            };
-
-            // Initialize on load
-            window.onload = function() {
-                initializeChart();
-                resetValues();
-            };
-        })();
+            if (loadDataButton) loadDataButton.addEventListener('click', uploadCsvData);
+        };
     </script>
 </body>
 </html>
