@@ -36,10 +36,6 @@
         .invalid-input {
             border-color: #dc2626;
         }
-        #qualityChart {
-            width: 100% !important;
-            height: 320px !important;
-        }
     </style>
 </head>
 <body class="bg-slate-100 flex flex-col items-center justify-center p-6 min-h-screen">
@@ -101,8 +97,8 @@
             </div>
             <div class="space-y-8">
                 <h2 class="text-2xl font-bold text-gray-800 border-b pb-2">Mix Qualities</h2>
-                <div class="bg-gray-100 p-4 rounded-xl shadow-inner flex items-center justify-center" style="min-height: 320px;">
-                    <canvas id="qualityChart" aria-label="Mix qualities radar chart" role="img" style="width:100%; max-width: 600px;"></canvas>
+                <div class="bg-gray-100 p-4 rounded-xl shadow-inner min-h-[300px] flex items-center justify-center">
+                    <canvas id="qualityChart" aria-label="Mix qualities radar chart" role="img"></canvas>
                 </div>
                 <div class="bg-indigo-50 rounded-lg p-6">
                     <ul class="grid grid-cols-2 gap-4 text-indigo-900 font-medium text-lg" aria-live="polite">
@@ -118,7 +114,6 @@
                 </div>
             </div>
         </div>
-        
         <div class="text-center mb-6 font-bold flex flex-col sm:flex-row items-center justify-center gap-6 p-4 border-t border-gray-200" aria-live="polite">
             <span id="totalPercentage" class="text-xl text-gray-800">Total Bitumen Mix: --%</span>
             <span id="remaining" class="text-xl flex items-center gap-2">
@@ -134,214 +129,390 @@
             </button>
         </div>
     </div>
-<script type="module">
-import { create, all } from 'https://cdn.jsdelivr.net/npm/mathjs@11.5.0/es6/math.js';
-const math = create(all);
+    
+    <script type="module">
+        import { create, all } from 'https://cdn.jsdelivr.net/npm/mathjs@11.5.0/es6/math.js';
+        const math = create(all);
 
-const getEl = id => document.getElementById(id);
-let chart;
+        // Your Firebase imports and variable declarations here
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, getDocs, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-function buildFeatureVector(row) {
-    return [
-        1,
-        row.c170Bitumen || 0,
-        row.SBS || 0,
-        row.HA32 || 0,
-        row.Bitlinker || 0,
-        row.RAP || 0,
-        row.RAS || 0,
-        row.CNT ? 1 : 0,
-        row.Wax ? 1 : 0,
-        (row.SBS || 0) * (row.Bitlinker || 0),
-        (row.SBS || 0) * (row.RAP || 0),
-        (row.SBS || 0) * (row.RAS || 0),
-        (row.RAP || 0) * (row.RAS || 0),
-        (row.CNT ? 1 : 0) * (row.Wax ? 1 : 0)
-    ];
-}
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : undefined;
 
-function fitMultivariateOLS(data, targetKey) {
-    try {
-        const X = data.map(d => buildFeatureVector(d));
-        const y = data.map(d => d[targetKey] || 0);
-        const Xmat = math.matrix(X);
-        const yvec = math.transpose(math.matrix([y]));
-        const Xt = math.transpose(Xmat);
-        const XtX = math.multiply(Xt, Xmat);
-        const XtX_inv = math.inv(XtX);
-        const XtY = math.multiply(Xt, yvec);
-        const coefMatrix = math.multiply(XtX_inv, XtY);
-        return coefMatrix._data.map(row => row[0]);
-    } catch (err) {
-        console.error('Matrix inversion failed:', err);
-        return null;
-    }
-}
+        let db, auth, userId, labDataDocs = [], importedDataDocs = [];
+        let chart;
 
-function predictTarget(row, coefficients) {
-    if (!coefficients) return null;
-    const features = buildFeatureVector(row);
-    return features.reduce((sum, val, i) => sum + val * coefficients[i], 0);
-}
+        // DOM element references
+        const inputs = {
+            c170Bitumen: document.getElementById('c170Bitumen'),
+            sbs: document.getElementById('sbs'),
+            ha32CombiningOil: document.getElementById('ha32CombiningOil'),
+            bitlinker: document.getElementById('bitlinker'),
+            rap: document.getElementById('rap'),
+            ras: document.getElementById('ras'),
+            carbonNanotubes: document.getElementById('carbonNanotubes'),
+            syntheticWax: document.getElementById('syntheticWax')
+        };
 
-function clampRound(num, min = 0, max = 100, decimals = 2) {
-    const clamped = Math.min(Math.max(num, min), max);
-    return Number(clamped.toFixed(decimals));
-}
+        const qualityEls = {
+            adhesion: document.getElementById('adhesion'),
+            durability: document.getElementById('durability'),
+            flexibility: document.getElementById('flexibility'),
+            tempResistance: document.getElementById('tempResistance'),
+            agingResistance: document.getElementById('agingResistance'),
+            torsionalRecovery: document.getElementById('torsionalRecovery'),
+            softeningPoint: document.getElementById('softeningPoint'),
+            settingTime: document.getElementById('settingTime')
+        };
+        const submitButton = document.getElementById('submitButton');
+        const resetButton = document.getElementById('resetButton');
+        const totalPercentageEl = document.getElementById('totalPercentage');
+        const remainingEl = document.getElementById('remaining');
+        const statusIconEl = document.getElementById('statusIcon');
+        const statusTextEl = document.getElementById('statusText');
 
-function updateCalculations() {
-    const c170Bitumen = parseFloat(getEl('c170Bitumen').value) || 0;
-    const sbs = parseFloat(getEl('sbs').value) || 0;
-    const ha32 = parseFloat(getEl('ha32CombiningOil').value) || 0;
-    const bitlinker = parseFloat(getEl('bitlinker').value) || 0;
-    const rap = parseFloat(getEl('rap').value) || 0;
-    const ras = parseFloat(getEl('ras').value) || 0;
-    const carbonNanotubes = getEl('carbonNanotubes').checked ? 1 : 0;
-    const syntheticWax = getEl('syntheticWax').checked ? 1 : 0;
+        // Helper functions
+        const getInputValue = (el) => {
+            if (!el) return 0;
+            if (el.type === 'checkbox') {
+                return el.checked ? 1 : 0;
+            }
+            const value = parseFloat(el.value);
+            return isNaN(value) ? 0 : value;
+        };
 
-    // Total and validation
-    const total = c170Bitumen + sbs + ha32 + bitlinker;
-    getEl('totalPercentage').textContent = `Total Bitumen Mix: ${total.toFixed(2)}%`;
-    const remaining = 100 - total;
-    getEl('remaining').querySelector('span').textContent = `Remaining: ${remaining.toFixed(2)}%`;
-    if (Math.abs(remaining) > 0.5) {
-        getEl('remaining').querySelector('span').classList.add('text-red-600');
-        getEl('statusIcon').textContent = '⚠️';
-        getEl('statusText').textContent = 'Main components must total 100%';
-    } else {
-        getEl('remaining').querySelector('span').classList.remove('text-red-600');
-        getEl('statusIcon').textContent = '✅';
-        getEl('statusText').textContent = 'Valid';
-    }
+        const clampRound = (num, min, max, precision) => {
+            const clamped = Math.max(min, Math.min(num, max));
+            const factor = Math.pow(10, precision);
+            return Math.round(clamped * factor) / factor;
+        };
 
-    // Base qualities (simplified example data)
-    const baseQualities = { adhesion: 0.315, durability: 0.245, flexibility: 0.34, tempResistance: 0.21, agingResistance: 0.255 };
-    const sbsQualities = { adhesion: 0.9, durability: 0.95, flexibility: 1, tempResistance: 0.9, agingResistance: 0.95 };
-    const ha32Qualities = { adhesion: 0.7, durability: 0.6, flexibility: 0.8, tempResistance: 0.7, agingResistance: 0.6 };
-    const bitlinkerQualities = { adhesion: 0.8, durability: 0.8, flexibility: 0.8, tempResistance: 0.8, agingResistance: 0.8 };
+        const buildFeatureVector = (dataPoint) => {
+            return [
+                dataPoint.c170Bitumen,
+                dataPoint.SBS,
+                dataPoint.HA32,
+                dataPoint.Bitlinker,
+                dataPoint.RAP,
+                dataPoint.RAS,
+                dataPoint.CNT,
+                dataPoint.Wax
+            ];
+        };
 
-    let adhesion = (c170Bitumen * baseQualities.adhesion + sbs * sbsQualities.adhesion + ha32 * ha32Qualities.adhesion + bitlinker * bitlinkerQualities.adhesion) / 100;
-    let durability = (c170Bitumen * baseQualities.durability + sbs * sbsQualities.durability + ha32 * ha32Qualities.durability + bitlinker * bitlinkerQualities.durability) / 100;
-    let flexibility = (c170Bitumen * baseQualities.flexibility + sbs * sbsQualities.flexibility + ha32 * ha32Qualities.flexibility + bitlinker * bitlinkerQualities.flexibility) / 100;
-    let tempResistance = (c170Bitumen * baseQualities.tempResistance + sbs * sbsQualities.tempResistance + ha32 * ha32Qualities.tempResistance + bitlinker * bitlinkerQualities.tempResistance) / 100;
-    let agingResistance = (c170Bitumen * baseQualities.agingResistance + sbs * sbsQualities.agingResistance + ha32 * ha32Qualities.agingResistance + bitlinker * bitlinkerQualities.agingResistance) / 100;
+        const fitMultivariateOLS = (data, targetKey) => {
+            if (data.length < 9) return null;
+            try {
+                const features = data.map(buildFeatureVector);
+                const target = data.map(d => d[targetKey]);
+                const X = math.matrix(features.map(f => [1, ...f]));
+                const Y = math.matrix(target);
+                const X_T = math.transpose(X);
+                const X_T_X = math.multiply(X_T, X);
+                const X_T_Y = math.multiply(X_T, Y);
+                const X_T_X_inv = math.inv(X_T_X);
+                const B = math.multiply(X_T_X_inv, X_T_Y);
+                return B.toArray();
+            } catch (error) {
+                console.error(`Error fitting OLS for ${targetKey}:`, error);
+                return null;
+            }
+        };
 
-    // Additive effects
-    if (carbonNanotubes) {
-        adhesion += 0.05;
-        durability += 0.05;
-        flexibility += 0.02;
-    }
-    if (syntheticWax) {
-        flexibility -= 0.03;
-    }
+        const predictTarget = (coefficients, inputVector) => {
+            if (!coefficients) return null;
+            const inputWithIntercept = [1, ...inputVector];
+            let prediction = 0;
+            for (let i = 0; i < coefficients.length; i++) {
+                prediction += coefficients[i] * inputWithIntercept[i];
+            }
+            return prediction;
+        };
 
-    // Clamp to 0-1 range
-    adhesion = Math.min(Math.max(adhesion, 0), 1);
-    durability = Math.min(Math.max(durability, 0), 1);
-    flexibility = Math.min(Math.max(flexibility, 0), 1);
-    tempResistance = Math.min(Math.max(tempResistance, 0), 1);
-    agingResistance = Math.min(Math.max(agingResistance, 0), 1);
+        const enhancedPredict = (importedData, currentMix) => {
+            const dataToUse = labDataDocs.concat(importedData);
+            if (dataToUse.length < 9) {
+                console.log('Not enough data for enhanced prediction. Using fallback model.');
+                return null;
+            }
+            const spCoeffs = fitMultivariateOLS(dataToUse, 'softeningPoint');
+            const trCoeffs = fitMultivariateOLS(dataToUse, 'torsionalRecovery');
 
-    // Convert to percentage
-    getEl('adhesion').textContent = (adhesion * 100).toFixed(1);
-    getEl('durability').textContent = (durability * 100).toFixed(1);
-    getEl('flexibility').textContent = (flexibility * 100).toFixed(1);
-    getEl('tempResistance').textContent = (tempResistance * 100).toFixed(1);
-    getEl('agingResistance').textContent = (agingResistance * 100).toFixed(1);
+            if (spCoeffs && trCoeffs) {
+                const currentVector = buildFeatureVector(currentMix);
+                const softeningPoint = predictTarget(spCoeffs, currentVector);
+                const torsionalRecovery = predictTarget(trCoeffs, currentVector);
+                return { softeningPoint, torsionalRecovery };
+            }
+            return null;
+        };
+        
+        // Main calculation logic
+        const updateCalculations = (importedData = []) => {
+            const tolerance = 0.5;
+            try {
+                const componentInputs = [inputs.c170Bitumen, inputs.sbs, inputs.ha32CombiningOil, inputs.bitlinker];
+                componentInputs.forEach(input => {
+                    if (input && input.type === 'number') input.classList.remove('invalid-input');
+                });
+                const c170 = getInputValue(inputs.c170Bitumen);
+                const sbs = getInputValue(inputs.sbs);
+                const ha32 = getInputValue(inputs.ha32CombiningOil);
+                const bitlinker = getInputValue(inputs.bitlinker);
+                const rap = getInputValue(inputs.rap);
+                const ras = getInputValue(inputs.ras);
+                const hasCNT = getInputValue(inputs.carbonNanotubes);
+                const hasWax = getInputValue(inputs.syntheticWax);
+                const totalComponents = clampRound(c170 + sbs + ha32 + bitlinker, 0, 100, 2);
+                const remaining = clampRound(100 - totalComponents, -100, 100, 2);
+                const isValid = Math.abs(totalComponents - 100) < tolerance;
+                
+                if (!isValid) {
+                    componentInputs.forEach(input => { if (input) input.classList.add('invalid-input'); });
+                }
 
-    // Simplified calculation for torsional recovery and softening point
-    let torsionalRecovery = 50 + (sbs / 100 * 30) - ((rap + ras) / 100 * 10);
-    let softeningPoint = 60 + (sbs / 100 * 25) + (bitlinker / 100 * 5) - ((rap + ras) / 100 * 5);
+                if (totalPercentageEl) totalPercentageEl.textContent = `Total Bitumen Mix: ${totalComponents.toFixed(2)}%`;
+                if (remainingEl) remainingEl.querySelector('span').textContent = `Remaining: ${remaining.toFixed(2)}%`;
+                if (remainingEl) remainingEl.querySelector('span').classList.toggle('text-red-600', !isValid);
 
-    getEl('torsionalRecovery').textContent = torsionalRecovery.toFixed(1);
-    getEl('softeningPoint').textContent = softeningPoint.toFixed(1);
+                let statusMessages = [];
+                if (!isValid) statusMessages.push('Main components must total 100%');
+                const statusMessage = statusMessages.length ? statusMessages.join(' and ') : 'Valid';
+                if (statusTextEl) statusTextEl.textContent = statusMessage;
+                if (statusIconEl) statusIconEl.textContent = statusMessages.length ? '⚠️' : '✅';
 
-    // Example setting time calculation
-    let settingTime = 120 - (bitlinker / 100 * 50) + (syntheticWax ? 15 : 0) - (carbonNanotubes ? 5 : 0);
-    getEl('settingTime').textContent = Math.round(settingTime);
+                if (!isValid) {
+                    if (chart) {
+                        chart.data.datasets[0].data = [0, 0, 0, 0, 0];
+                        chart.update();
+                    }
+                    Object.values(qualityEls).forEach(el => { if (el) el.textContent = '--'; });
+                    return;
+                }
 
-    // Update chart data
-    const chartData = [
-        adhesion * 100,
-        durability * 100,
-        flexibility * 100,
-        tempResistance * 100,
-        agingResistance * 100
-    ];
+                // Base qualities and additive calculations
+                const mixQualities = {
+                    adhesion: (c170 * 0.70 + sbs * 0.95 + ha32 * 0.80 + bitlinker * 0.90) / 100,
+                    durability: (c170 * 0.85 + sbs * 0.90 + ha32 * 0.75 + bitlinker * 0.85) / 100,
+                    flexibility: (c170 * 0.60 + sbs * 0.98 + ha32 * 0.70 + bitlinker * 0.92) / 100,
+                    tempResistance: (c170 * 0.65 + sbs * 0.90 + ha32 * 0.70 + bitlinker * 0.88) / 100,
+                    agingResistance: (c170 * 0.80 + sbs * 0.95 + ha32 * 0.75 + bitlinker * 0.90) / 100
+                };
+                
+                const totalMix = c170 + sbs + ha32 + bitlinker;
+                const normalizedQualities = Object.fromEntries(
+                    Object.entries(mixQualities).map(([key, value]) => [key, (value / totalMix) * 100])
+                );
 
-    if(chart && chartData.every(val => !isNaN(val))) {
-        chart.data.datasets[0].data = chartData;
-        chart.update();
-    }
-}
+                // Predict with enhanced model or fallback
+                const importedDataObjects = importedData.map(doc => doc.data());
+                const predictions = enhancedPredict(importedDataObjects, { 
+                    c170Bitumen: c170,
+                    SBS: sbs,
+                    HA32: ha32,
+                    Bitlinker: bitlinker,
+                    RAP: rap,
+                    RAS: ras,
+                    CNT: hasCNT,
+                    Wax: hasWax
+                });
 
-function resetValues() {
-    getEl('c170Bitumen').value = 70;
-    getEl('sbs').value = 15;
-    getEl('ha32CombiningOil').value = 10;
-    getEl('bitlinker').value = 5;
-    getEl('rap').value = 0;
-    getEl('ras').value = 0;
-    getEl('carbonNanotubes').checked = false;
-    getEl('syntheticWax').checked = false;
+                let softeningPoint, torsionalRecovery;
+                if (predictions) {
+                    softeningPoint = predictions.softeningPoint;
+                    torsionalRecovery = predictions.torsionalRecovery;
+                } else {
+                    softeningPoint = 55 + (sbs * 0.5) + (bitlinker * 0.3) - (ha32 * 0.1) + (hasCNT ? 3 : 0) - (rap * 0.05);
+                    torsionalRecovery = 25 + (sbs * 0.8) + (bitlinker * 0.5) - (ha32 * 0.2) + (hasWax ? 5 : 0) - (ras * 0.08);
+                }
 
-    updateCalculations();
-}
+                // Apply RAP/RAS effects to other qualities
+                if (rap > 0) {
+                    normalizedQualities.adhesion *= (1 - rap / 100 * 0.15);
+                    normalizedQualities.durability *= (1 - rap / 100 * 0.10);
+                    normalizedQualities.flexibility *= (1 - rap / 100 * 0.20);
+                    normalizedQualities.agingResistance *= (1 - rap / 100 * 0.10);
+                }
+                if (ras > 0) {
+                    normalizedQualities.adhesion *= (1 - ras / 100 * 0.20);
+                    normalizedQualities.durability *= (1 - ras / 100 * 0.15);
+                    normalizedQualities.flexibility *= (1 - ras / 100 * 0.25);
+                    normalizedQualities.agingResistance *= (1 - ras / 100 * 0.15);
+                }
 
-function initializeChart() {
-    const ctx = getEl('qualityChart').getContext('2d');
-    chart = new Chart(ctx, {
-        type: 'radar',
-        data: {
-            labels: ['Adhesion', 'Durability', 'Flexibility', 'Temp. Resistance', 'Aging Resistance'],
+                // Apply additive effects
+                if (hasCNT) {
+                    normalizedQualities.adhesion += 5;
+                    normalizedQualities.durability += 5;
+                    normalizedQualities.tempResistance += 10;
+                }
+                if (hasWax) {
+                    normalizedQualities.flexibility += 5;
+                    normalizedQualities.tempResistance += 8;
+                }
+                
+                // Set the default setting time
+                const settingTime = 30 + (sbs * 0.5) - (bitlinker * 0.2) + (hasCNT ? -5 : 0) + (hasWax ? 5 : 0);
+
+                // Clamp final values
+                const finalQualities = Object.fromEntries(
+                    Object.entries(normalizedQualities).map(([key, value]) => [key, clampRound(value, 0, 100, 2)])
+                );
+                softeningPoint = clampRound(softeningPoint, 40, 90, 2);
+                torsionalRecovery = clampRound(torsionalRecovery, 0, 100, 2);
+                
+                // Update the DOM with calculated values
+                if (qualityEls.adhesion) qualityEls.adhesion.textContent = `${finalQualities.adhesion.toFixed(2)}%`;
+                if (qualityEls.durability) qualityEls.durability.textContent = `${finalQualities.durability.toFixed(2)}%`;
+                if (qualityEls.flexibility) qualityEls.flexibility.textContent = `${finalQualities.flexibility.toFixed(2)}%`;
+                if (qualityEls.tempResistance) qualityEls.tempResistance.textContent = `${finalQualities.tempResistance.toFixed(2)}%`;
+                if (qualityEls.agingResistance) qualityEls.agingResistance.textContent = `${finalQualities.agingResistance.toFixed(2)}%`;
+                if (qualityEls.torsionalRecovery) qualityEls.torsionalRecovery.textContent = `${torsionalRecovery.toFixed(2)}%`;
+                if (qualityEls.softeningPoint) qualityEls.softeningPoint.textContent = `${softeningPoint.toFixed(2)} °C`;
+                if (qualityEls.settingTime) qualityEls.settingTime.textContent = `${settingTime.toFixed(2)} mins`;
+
+                // Update the radar chart
+                if (chart) {
+                    chart.data.datasets[0].data = [
+                        finalQualities.adhesion,
+                        finalQualities.durability,
+                        finalQualities.flexibility,
+                        finalQualities.tempResistance,
+                        finalQualities.agingResistance
+                    ];
+                    chart.update();
+                }
+
+            } catch (error) {
+                console.error('Calculation failed:', error);
+                // Reset all displayed values on error
+                Object.values(qualityEls).forEach(el => { if (el) el.textContent = '--'; });
+                if (chart) {
+                    chart.data.datasets[0].data = [0, 0, 0, 0, 0];
+                    chart.update();
+                }
+            }
+        };
+
+        // Event listeners and initial setup
+        submitButton.addEventListener('click', () => updateCalculations(importedDataDocs));
+        resetButton.addEventListener('click', () => {
+            inputs.c170Bitumen.value = 70;
+            inputs.sbs.value = 15;
+            inputs.ha32CombiningOil.value = 10;
+            inputs.bitlinker.value = 5;
+            inputs.rap.value = 0;
+            inputs.ras.value = 0;
+            inputs.carbonNanotubes.checked = false;
+            inputs.syntheticWax.checked = false;
+            updateCalculations();
+        });
+
+        // Initialize Firebase and Auth State Listener
+        const app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
+
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userId = user.uid;
+                await fetchLabData();
+            } else {
+                signInAnonymously(auth).then(async (userCredential) => {
+                    userId = userCredential.user.uid;
+                    await fetchLabData();
+                }).catch(error => {
+                    console.error("Error signing in anonymously:", error);
+                });
+            }
+        });
+
+        // Fetch lab data from Firestore
+        const fetchLabData = async () => {
+            const labDataRef = collection(db, 'lab-data');
+            try {
+                const querySnapshot = await getDocs(labDataRef);
+                labDataDocs = querySnapshot.docs.map(doc => doc);
+                updateCalculations();
+            } catch (error) {
+                console.error('Error fetching lab data:', error);
+                updateCalculations(); // Run calculations even if fetch fails
+            }
+        };
+
+        // Initialize the radar chart
+        const ctx = document.getElementById('qualityChart').getContext('2d');
+        const labels = ['Adhesion', 'Durability', 'Flexibility', 'Temp Resistance', 'Aging Resistance'];
+        const data = {
+            labels: labels,
             datasets: [{
-                label: 'Mix Quality',
+                label: 'Current Mix Quality',
                 data: [0, 0, 0, 0, 0],
-                backgroundColor: 'rgba(79, 70, 229, 0.2)',
-                borderColor: 'rgba(79, 70, 229, 1)',
-                borderWidth: 2,
-                pointBackgroundColor: 'rgba(79, 70, 229, 1)',
+                fill: true,
+                backgroundColor: 'rgba(99, 102, 241, 0.4)',
+                borderColor: 'rgb(99, 102, 241)',
+                pointBackgroundColor: 'rgb(99, 102, 241)',
                 pointBorderColor: '#fff',
                 pointHoverBackgroundColor: '#fff',
-                pointHoverBorderColor: 'rgba(79, 70, 229, 1)'
+                pointHoverBorderColor: 'rgb(99, 102, 241)'
             }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                r: {
-                    angleLines: { display: false },
-                    suggestedMin: 0,
-                    suggestedMax: 100,
-                    pointLabels: {
-                        font: { size: 14, family: 'Inter', weight: 'bold' },
-                        color: '#4b5563'
+        };
+
+        chart = new Chart(ctx, {
+            type: 'radar',
+            data: data,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                elements: {
+                    line: {
+                        borderWidth: 3
+                    }
+                },
+                scales: {
+                    r: {
+                        angleLines: {
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        },
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        },
+                        pointLabels: {
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        },
+                        suggestedMin: 0,
+                        suggestedMax: 100
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
                     },
-                    ticks: { display: false }
-                }
-            },
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    callbacks: {
-                        label: ctx => ctx.dataset.label + ': ' + ctx.raw.toFixed(1) + '%'
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                if (context.parsed.r !== null) {
+                                    label += context.parsed.r.toFixed(2) + '%';
+                                }
+                                return label;
+                            }
+                        }
                     }
                 }
             }
-        }
-    });
-}
-
-window.onload = () => {
-    initializeChart();
-    resetValues();
-
-    getEl('submitButton').addEventListener('click', updateCalculations);
-    getEl('resetButton').addEventListener('click', resetValues);
-};
-</script>
+        });
+        
+    </script>
 </body>
 </html>
-
